@@ -7,14 +7,16 @@ Web app responsive, pubblicabile su GitHub Pages. Usa Supabase Auth e Postgres p
 - Registrazione con username, email e password; accesso con email e password.
 - Profilo admin riservato allo username `pepe1914`.
 - Una serata attiva per progetto Supabase; all'avvio vengono inclusi gli account già registrati.
-- Assegnazione casuale delle categorie. Se le persone sono più delle categorie, le categorie ricominciano dopo una nuova mescolata.
+- Draft delle categorie: l'admin avvia un ordine casuale persistente e i partecipanti scelgono una categoria libera a turno. L'avvio richiede almeno una categoria per ogni account partecipante.
+- Bonus di scelta lineare da 0 al primo turno a 0,5 all'ultimo; il punteggio finale applica il bonus una sola volta alla media del film.
 - Nomination privata: ogni partecipante vede il proprio titolo e lo stato di invio degli altri, ma non i loro titoli.
 - Ricerca OMDb dei titoli con completamento automatico. I dettagli, la locandina e la valutazione IMDb compaiono quando l'admin estrae il film.
 - Sorteggio casuale da parte dell'admin. Ogni nomination estratta esce definitivamente dal pool.
 - Verifica anonima “L'ho visto / Non l'ho visto”, con conteggio dei voti e percentuale aggregata in tempo reale. Se più del 55% dichiara di averlo già visto, chi ha proposto il film può sostituire il titolo sulla stessa estrazione; la verifica riparte da zero.
 - Valutazione dei film approvati da 1 a 5 popcorn, con mezzi punti.
-- Classifica sbloccata quando il pool è vuoto e tutti i film approvati hanno ricevuto il voto di tutti. L'admin rivela una posizione alla volta, dall'ultima fino al podio.
-- La premiazione mostra le posizioni coperte, poi un podio con reveal dal terzo al primo posto e una schermata vincitore con coriandoli, locandina, autore della nomination e voto medio.
+- Risultati provvisori e progresso delle valutazioni durante la serata. La classifica finale viene pubblicata solo quando l'admin finalizza.
+- Classifica ordinata per punteggio finale, media non corretta come spareggio e pari merito condivisi; le valutazioni mancanti non vengono conteggiate.
+- La schermata finale mostra film, categoria, partecipante che ha scelto la categoria, posizione, numero di voti, media, bonus e punteggio finale, oltre alla schermata vincitore con coriandoli.
 - I titoli duplicati nella stessa serata sono rifiutati dopo normalizzazione di maiuscole e spazi.
 - Aggiornamento automatico della dashboard ogni 12 secondi, oltre al pulsante Aggiorna.
 
@@ -101,12 +103,13 @@ Le risorse HTML, CSS e JS usano percorsi relativi, quindi funzionano anche sotto
 ## Come si usa
 
 1. Gli utenti si registrano prima che l'admin avvii la serata. Chi si registra dopo l'avvio potrà partecipare alla successiva.
-2. L'admin preme **Assegna le categorie**. Tutti gli account esistenti, admin incluso, ricevono una categoria.
-3. Ogni utente invia una sola nomination. Gli altri vedono chi ha partecipato, senza leggere i titoli.
-4. L'admin estrae un film. Tutti votano se lo hanno già visto. I conteggi sono anonimi; il film viene rifiutato se più del 55% risponde “L'ho visto”.
-5. Se il film viene rifiutato, chi ha inviato la nomination lo sostituisce. Il titolo cambia sulla stessa estrazione e tutti votano di nuovo. Se viene approvato, tutti assegnano un voto e l'admin può estrarre il prossimo titolo.
-6. Quando il pool è vuoto e ogni film approvato ha un voto da tutti, si sblocca la classifica. L'admin rivela le posizioni in sequenza; i pari merito sono ordinati alfabeticamente per titolo.
-7. Quando il podio è completo, l'admin può avviare una nuova serata.
+2. L'admin preme **Avvia il draft categorie**. Il database salva un ordine casuale di tutti gli account già registrati, admin incluso.
+3. I partecipanti scelgono una categoria libera uno alla volta nell'ordine mostrato. L'ordine e il bonus restano salvati anche dopo un aggiornamento della pagina.
+4. Ogni utente invia una sola nomination. Gli altri vedono chi ha partecipato, senza leggere i titoli.
+5. L'admin estrae un film. Tutti votano se lo hanno già visto. I conteggi sono anonimi; il film viene rifiutato se più del 55% risponde “L'ho visto”.
+6. Se il film viene rifiutato, chi ha inviato la nomination lo sostituisce. Il titolo cambia sulla stessa estrazione e tutti votano di nuovo. Se viene approvato, tutti possono assegnare o aggiornare la propria valutazione.
+7. La sezione Partecipanti mostra risultati provvisori e progresso dei voti. Quando tutte le nomination sono state estratte e le verifiche sono concluse, l'admin preme **Concludi e pubblica classifica**. Le valutazioni mancanti sono escluse dalle medie.
+8. La classifica finale applica il bonus una sola volta al punteggio medio del film. Dopo la pubblicazione l'admin può avviare una nuova serata.
 
 ## Nota sul login
 
@@ -114,7 +117,9 @@ Supabase Auth autentica con email e password. Lo username viene usato per identi
 
 ## Architettura e sicurezza
 
-- Tutti i sorteggi, controlli admin, voti di verifica, conteggi e reveal passano da funzioni PostgreSQL con controlli server-side.
+- Tutti i sorteggi, controlli admin, voti, conteggi, punteggi e finalizzazione passano da funzioni PostgreSQL con controlli server-side.
+- L'ordine del draft, i turni e le categorie scelte sono salvati nel database. Le RPC impediscono turni anticipati e categorie già selezionate.
+- I punteggi provvisori e finali sono aggregati lato server; solo l'admin può finalizzare la serata, senza esporre i voti individuali.
 - Le nomination sono in una tabella con policy che permette la lettura solo all'autore. Il sorteggio trasferisce il titolo estratto in `drawn_films`, visibile ai partecipanti.
 - Le risposte individuali “già visto” e i voti individuali non sono leggibili dagli altri. Il browser riceve solo i risultati aggregati necessari.
 - RLS è attiva sulle tabelle esposte e il client non ha permessi di scrittura diretta sulle tabelle.

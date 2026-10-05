@@ -1,5 +1,6 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "./supabase-config.js";
+import { pickBonus } from "./scoring.js";
 
 const configured = SUPABASE_URL.startsWith("https://")
   && !SUPABASE_URL.includes("YOUR-PROJECT")
@@ -116,13 +117,14 @@ async function refreshDashboard(quiet = false) {
     if (nightError) throw nightError;
     if (!night) {
       dashboard = { night: null, isMember: false, members: [], draws: [], drawSubmitters: {}, categories: {},
-        myNomination: null, mySeen: {}, myRatings: {}, assignment: null, leaderboard: null, revealed: [] };
+        myNomination: null, mySeen: {}, myRatings: {}, assignment: null, categoryDraft: [],
+        leaderboard: null, provisional: [], revealed: [] };
       renderAll();
       return;
     }
 
     const { data: memberRows, error: memberError } = await supabase
-      .from("night_members").select("night_id,user_id,has_nominated,joined_at")
+      .from("night_members").select("night_id,user_id,has_nominated,joined_at,pick_position")
       .eq("night_id", night.id).order("joined_at", { ascending: true });
     if (memberError) throw memberError;
     const members = memberRows || [];
@@ -164,12 +166,17 @@ async function refreshDashboard(quiet = false) {
     let movieMetadata = {};
     let myNomination = null;
     let assignment = null;
+    let categoryDraft = [];
     let leaderboard = null;
+    let provisional = [];
     let revealed = [];
     const mySeen = {};
     const myRatings = {};
 
     if (isMember) {
+      const { data: draftRows, error: draftError } = await supabase.rpc("get_category_draft_state", { p_night_id: night.id });
+      if (draftError) throw draftError;
+      categoryDraft = draftRows || [];
       const { data: assignmentRows, error: assignmentError } = await supabase.rpc("get_my_assignment", { p_night_id: night.id });
       if (assignmentError) throw assignmentError;
       assignment = assignmentRows?.[0] || null;
@@ -199,11 +206,15 @@ async function refreshDashboard(quiet = false) {
         const { data: revealedRows, error: revealedError } = await supabase.rpc("get_revealed_movies", { p_night_id: night.id });
         if (revealedError) throw revealedError;
         revealed = revealedRows || [];
+      } else {
+        const { data: provisionalRows, error: provisionalError } = await supabase.rpc("get_provisional_leaderboard", { p_night_id: night.id });
+        if (provisionalError) throw provisionalError;
+        provisional = provisionalRows || [];
       }
     }
 
     dashboard = { night, isMember, members, profileMap, draws, drawSubmitters, categories, movieMetadata, myNomination,
-      mySeen, myRatings, assignment, leaderboard, revealed };
+      mySeen, myRatings, assignment, categoryDraft, leaderboard, provisional, revealed };
     renderAll();
   } catch (error) {
     if (!quiet) toast(readableError(error), "error");
@@ -218,24 +229,33 @@ function renderEmpty(title, description, action = "") {
     + escapeHtml(title) + "</h2><p>" + escapeHtml(description) + "</p>" + action + "</div></div>";
 }
 
-function renderAdminPanel(night, allNominated, poolRemaining, canDraw, replacementPending = false) {
+function renderAdminPanel(night, allNominated, poolRemaining, canDraw, replacementPending = false, canFinalize = false, ratingProgress = null) {
   if (currentProfile?.role !== "admin") return "";
   if (!night) {
-    return '<article class="card admin-card"><h3>Controlli admin</h3><p>Avvia una serata: verrà assegnata una categoria casuale a ogni account già registrato.</p><button class="button button-primary" data-action="start-night">Assegna le categorie</button></article>';
+    return '<article class="card admin-card"><h3>Controlli admin</h3><p>Avvia la serata per sorteggiare l’ordine e scegliere le categorie a turno.</p><button class="button button-primary" data-action="start-night">Avvia il draft categorie</button></article>';
   }
   if (night.phase === "complete") {
-    return '<article class="card admin-card"><h3>Serata conclusa</h3><p>La classifica è stata rivelata. Puoi aprire una nuova serata e assegnare altre categorie.</p><button class="button button-primary" data-action="start-night">Nuova serata</button></article>';
+    return '<article class="card admin-card"><h3>Serata conclusa</h3><p>La classifica finale è stata pubblicata. Puoi aprire una nuova serata.</p><button class="button button-primary" data-action="start-night">Nuova serata</button></article>';
+  }
+  if (night.phase === "category_draft") {
+    const picked = dashboard?.categoryDraft?.filter((row) => row.category_id !== null).length || 0;
+    const total = dashboard?.categoryDraft?.length || 0;
+    return '<article class="card admin-card"><h3>Draft categorie in corso</h3><p>' + picked + ' di ' + total
+      + ' categorie scelte. Il sorteggio prosegue nell’ordine salvato.</p></article>';
   }
   let explanation = "";
   if (!allNominated) explanation = "Aspetta che tutti i partecipanti inviino la propria nomination.";
   else if (replacementPending) explanation = "In attesa che chi ha proposto il film inserisca un titolo sostitutivo.";
-  else if (poolRemaining === 0) explanation = "Pool esaurito. Completa i voti rimasti per sbloccare la classifica.";
+  else if (poolRemaining === 0) explanation = "Pool estratto. Puoi pubblicare la classifica quando vuoi.";
   else if (!canDraw) explanation = "Completa la verifica e le valutazioni del film attuale prima della prossima estrazione.";
   else explanation = poolRemaining + (poolRemaining === 1 ? " film nel pool, pronto per il sorteggio." : " film nel pool, pronti per il sorteggio.");
   const buttonText = dashboard?.draws.length ? "Pesca il prossimo film" : "Sorteggia un film";
   return '<article class="card admin-card"><div class="admin-row"><div><h3>Controlli admin</h3><p>' + escapeHtml(explanation)
-    + '</p></div><span class="pool-label">Pool · ' + poolRemaining + '</span></div><button class="button button-primary" data-action="draw-film" '
-    + (canDraw ? "" : "disabled") + ">" + buttonText + ' <span aria-hidden="true">↗</span></button></article>';
+    + '</p>' + (ratingProgress ? '<p class="admin-rating-progress">Valutazioni ricevute · ' + ratingProgress.submitted + '/' + ratingProgress.expected + '</p>' : '')
+    + '</div><span class="pool-label">Pool · ' + poolRemaining + '</span></div><div class="admin-actions"><button class="button button-primary" data-action="draw-film" '
+    + (canDraw ? "" : "disabled") + ">" + buttonText + ' <span aria-hidden="true">↗</span></button>'
+    + (canFinalize ? '<button class="button button-secondary" data-action="finalize-night">Concludi e pubblica classifica</button>' : "")
+    + '</div></article>';
 }
 
 function renderMemberRows(members, profileMap) {
@@ -360,6 +380,63 @@ function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNom
     + '</span><time class="film-date"' + dateTime + '>' + escapeHtml(pickedDate) + '</time></aside></article>';
 }
 
+function renderCategoryDraft(rows, categories, phase) {
+  if (!rows?.length) return "";
+  const current = rows.find((row) => row.is_current_turn);
+  const mine = rows.find((row) => row.is_me);
+  const claimedIds = new Set(rows.filter((row) => row.category_id !== null).map((row) => Number(row.category_id)));
+  const available = Object.entries(categories).filter(([id]) => !claimedIds.has(Number(id)));
+  const completed = rows.filter((row) => row.category_id !== null).length;
+  const count = rows.length;
+  const order = rows.map((row) => {
+    const bonus = Number(row.pick_bonus ?? pickBonus(Number(row.pick_position), count));
+    const state = row.category_name
+      ? '<span class="draft-category-selected">' + escapeHtml(row.category_name) + '</span>'
+      : row.is_current_turn ? '<span class="draft-turn-pill">Sceglie ora</span>'
+        : '<span class="small-muted">In attesa</span>';
+    return '<li class="draft-order-row ' + (row.is_current_turn ? "is-current" : "") + '"><span class="draft-order-position">'
+      + String(row.pick_position).padStart(2, "0") + '</span><span class="draft-order-user">' + escapeHtml(row.username)
+      + (row.is_me ? ' <small>(tu)</small>' : '') + '</span><span class="draft-order-selection">' + state
+      + '</span><span class="draft-order-bonus">+' + bonus.toFixed(3).replace(/0+$/, "").replace(/\.$/, "") + '</span></li>';
+  }).join("");
+  const turnCopy = phase === "category_draft"
+    ? current ? current.is_me ? "È il tuo turno: scegli una delle categorie ancora libere." : "Sceglie ora " + current.username + "."
+      : "Tutte le categorie sono state scelte."
+    : "Scelte salvate. L’ordine e il bonus restano associati alla serata.";
+  const choices = phase === "category_draft"
+    ? '<div class="draft-choice-area"><h3>Categorie disponibili</h3><div class="draft-category-options">'
+      + available.map(([id, name]) => mine?.is_current_turn
+        ? '<button class="draft-category-option" type="button" data-action="select-category" data-category-id="'
+          + escapeHtml(id) + '">' + escapeHtml(name) + '</button>'
+        : '<span class="draft-category-option is-locked" aria-disabled="true">' + escapeHtml(name) + '</span>').join("")
+      + '</div></div>' : "";
+  return '<section class="card category-draft-card"><div class="section-heading"><div><span class="section-kicker">DRAFT CATEGORIE</span>'
+    + '<h2>Ordine di scelta</h2><p>' + escapeHtml(turnCopy) + '</p></div><span class="status-chip">' + completed + '/' + count + '</span></div>'
+    + '<p class="draft-bonus-note">Bonus scelta: da +0,00 al primo turno a +0,50 all’ultimo. Il valore compare accanto a ogni posizione.</p>'
+    + '<ol class="draft-order-list">' + order + '</ol>' + choices + '</section>';
+}
+
+function renderScoreList(scores, provisional = false) {
+  const title = provisional ? "Classifica provvisoria" : "Classifica finale";
+  if (!scores?.length) return provisional ? "" : renderEmpty("Nessun film classificato", "Non sono presenti film con una valutazione valida.");
+  const cards = scores.map((film) => {
+    const rank = Number(film.rank_position);
+    const average = film.average_rating === null ? "—" : Number(film.average_rating).toFixed(2);
+    const bonus = Number(film.pick_bonus || 0).toFixed(2);
+    const final = film.final_score === null ? "—" : Number(film.final_score).toFixed(2);
+    return '<article class="score-card">' + moviePosterMarkup(film.poster_url, film.title, "score-poster")
+      + '<div class="score-card-main"><div class="score-card-top"><span class="score-rank">' + (rank ? "#" + rank : "—")
+      + '</span><h3>' + escapeHtml(film.title) + '</h3><span class="score-final">' + final + '<small> / 5</small></span></div>'
+      + '<p class="score-card-meta">' + escapeHtml(film.category_name || "Cinema") + ' · categoria scelta da <strong>'
+      + escapeHtml(film.selected_by || "Partecipante") + '</strong> · posizione #' + escapeHtml(film.pick_position ?? "—") + '</p>'
+      + '<div class="score-breakdown"><span>' + Number(film.rating_count || 0) + ' valutazioni</span><span>Media ' + average
+      + '</span><span>Bonus +' + bonus + '</span><span>Punteggio ' + final + '</span></div></div></article>';
+  }).join("");
+  return '<section class="score-section"><div class="section-heading"><div><span class="section-kicker">' + (provisional ? "RISULTATI IN CORSO" : "PREMIAZIONE")
+    + '</span><h2>' + title + '</h2><p>' + (provisional ? "I punteggi cambiano quando arrivano altre valutazioni; l’admin deve finalizzare per pubblicare la classifica." : "Punteggi finali ordinati per score; le parità condividono la posizione.")
+    + '</p></div></div><div class="score-list">' + cards + '</div></section>';
+}
+
 function renderNight() {
   if (!dashboard?.night) {
     nightView.innerHTML = renderEmpty("Il film sarà annunciato qui", "Quando l’admin avrà avviato la serata e sorteggiato un titolo, qui troverai il film da guardare.");
@@ -367,6 +444,17 @@ function renderNight() {
   }
   if (!dashboard.isMember) {
     nightView.innerHTML = renderEmpty("Il film sarà annunciato qui", "Questa serata è stata aperta prima della tua registrazione. Potrai partecipare alla prossima.");
+    return;
+  }
+  if (dashboard.night.phase === "category_draft") {
+    const myPick = dashboard.categoryDraft?.find((row) => row.is_me);
+    const currentPick = dashboard.categoryDraft?.find((row) => row.is_current_turn);
+    const message = myPick?.is_current_turn
+      ? "È il tuo turno: scegli una categoria dalla sezione Partecipanti."
+      : currentPick ? "È il turno di " + currentPick.username + ". Il tuo bonus di scelta è +"
+        + Number(myPick?.pick_bonus || 0).toFixed(3).replace(/0+$/, "").replace(/\.$/, "") + "."
+        : "L’ordine delle categorie è stato salvato.";
+    nightView.innerHTML = renderEmpty("Draft delle categorie", message);
     return;
   }
   const draws = dashboard.draws || [];
@@ -395,14 +483,15 @@ function renderNight() {
 function renderParticipants() {
   if (!dashboard?.night) {
     participantsView.innerHTML = currentProfile?.role === "admin"
-      ? '<div class="section-heading"><div><span class="section-kicker">PRONTI A COMINCIARE?</span><h2>La prossima serata inizia qui</h2><p>Registra gli amici, poi assegna a ciascuno una categoria casuale.</p></div></div>'
-        + renderEmpty("Nessuna serata attiva", "Quando avvii una serata, tutti gli account registrati ricevono una categoria.")
+      ? '<div class="section-heading"><div><span class="section-kicker">PRONTI A COMINCIARE?</span><h2>La prossima serata inizia qui</h2><p>Registra i partecipanti, poi avvia il draft delle categorie.</p></div></div>'
+        + renderEmpty("Nessuna serata attiva", "Quando avvii il draft, tutti gli account registrati scelgono una categoria nell’ordine sorteggiato.")
         + '<div class="admin-control">' + renderAdminPanel(null, false, 0, false) + "</div>"
-      : renderEmpty("Ancora nessuna serata", "L’admin deve avviare la serata e assegnare le categorie ai partecipanti.");
+      : renderEmpty("Ancora nessuna serata", "L’admin deve avviare la serata e il draft delle categorie.");
     return;
   }
 
-  const { night, members, profileMap, draws, drawSubmitters = {}, categories, movieMetadata = {}, isMember, assignment, myNomination, mySeen, myRatings, leaderboard } = dashboard;
+  const { night, members, profileMap, draws, drawSubmitters = {}, categories, movieMetadata = {}, isMember, assignment,
+    categoryDraft = [], myNomination, mySeen, myRatings, leaderboard, provisional = [] } = dashboard;
   if (!isMember) {
     participantsView.innerHTML = renderEmpty("Non sei in questa serata", "Questa serata è stata aperta prima della tua registrazione. Potrai partecipare alla prossima.")
       + (currentProfile?.role === "admin" ? '<div class="admin-control">' + renderAdminPanel(night, false, 0, false) + "</div>" : "");
@@ -422,16 +511,31 @@ function renderParticipants() {
   const waitingRatings = draws.some((draw) => draw.status === "approved" && draw.rating_count < draw.member_count);
   const hasRejected = draws.some((draw) => draw.status === "rejected");
   const canDraw = night.phase === "nominations" && allNominated && poolRemaining > 0 && !hasChecking && !hasRejected && !waitingRatings;
-  const phaseLabel = night.phase === "complete" ? "Serata conclusa" : leaderboard?.unlocked ? "Classifica da rivelare" : "Serata in corso";
+  const canFinalize = (night.phase === "nominations" || night.phase === "leaderboard")
+    && allNominated && poolRemaining === 0 && !hasChecking && !hasRejected;
+  const approvedDraws = draws.filter((draw) => draw.status === "approved");
+  const ratingProgress = {
+    submitted: approvedDraws.reduce((total, draw) => total + Number(draw.rating_count || 0), 0),
+    expected: approvedDraws.reduce((total, draw) => total + Number(draw.member_count || memberCount), 0),
+  };
+  const phaseLabel = night.phase === "category_draft" ? "Draft categorie"
+    : night.phase === "complete" ? "Classifica pubblicata" : leaderboard?.unlocked ? "Classifica pubblicata" : "Serata in corso";
   const phaseClass = night.phase === "complete" ? "success" : "";
-  const categoryName = assignment?.category_name || "Categoria assegnata";
-  const nominationBox = myNomination
+  const categoryName = assignment?.category_name || (night.phase === "category_draft" ? "Scelta in corso" : "Categoria non disponibile");
+  const nominationBox = night.phase === "category_draft"
+    ? '<p class="draft-home-message">La categoria sarà disponibile al tuo turno nella sezione Partecipanti.</p>'
+    : night.phase !== "nominations" ? '<p class="draft-home-message">Le nomination sono chiuse per questa serata.</p>'
+      : myNomination
     ? '<div class="your-nomination"><span aria-hidden="true">✓</span> Nomination inviata: <strong>' + escapeHtml(myNomination.title) + "</strong></div>"
     : '<form id="nomination-form" class="nomination-form"><label for="movie-title">Scegli il tuo film</label>' + renderAutocompleteField("movie-title", "Titolo del film…") + '<button class="button button-primary" type="submit">Invia nomination <span aria-hidden="true">→</span></button></form>';
   const drawSection = chronologicalDraws.length
     ? '<div class="divider"></div><div class="section-heading"><div><span class="section-kicker">POOL ESTRATTO</span><h2>Film della serata</h2><p>Vengono mostrati solo dopo il sorteggio.</p></div></div><div class="film-list">'
       + chronologicalDraws.map((draw, i) => renderDrawCard(draw, i, categories, mySeen, myRatings, night.phase, myNomination?.id, movieMetadata[draw.id], drawSubmitters[draw.nomination_id], draw.id !== currentDrawId)).join("") + "</div>"
     : '<div class="divider"></div><p class="small-muted">I titoli restano segreti fino al sorteggio. Per ora puoi vedere solo chi ha completato la nomination.</p>';
+  const draftSection = renderCategoryDraft(categoryDraft, categories, night.phase);
+  const provisionalSection = night.phase !== "complete" && (provisional.length || approvedDraws.length)
+    ? '<div class="provisional-progress"><span>Valutazioni ricevute · ' + ratingProgress.submitted + '/' + ratingProgress.expected + '</span></div>'
+      + renderScoreList(provisional, true) : "";
   participantsView.innerHTML = '<div class="participants-heading"><div><span class="eyebrow">LA SERATA</span><h2>Partecipanti</h2></div><span class="status-chip '
     + phaseClass + '">' + escapeHtml(phaseLabel) + '</span></div><div class="night-banner"><div><span class="eyebrow">SERATA CINEMA · '
     + escapeHtml(new Date(night.created_at).toLocaleDateString("it-IT", { day: "numeric", month: "long" }))
@@ -439,19 +543,15 @@ function renderParticipants() {
     + '<article class="stat-card"><div class="stat-label">PARTECIPANTI</div><div class="stat-value">' + memberCount + '<small>persone</small></div></article>'
     + '<article class="stat-card"><div class="stat-label">NOMINATION</div><div class="stat-value">' + submittedCount + '<small>su ' + memberCount + '</small></div></article>'
     + '<article class="stat-card"><div class="stat-label">POOL RIMASTO</div><div class="stat-value">' + poolRemaining + '<small>film</small></div></article></div>'
+    + draftSection
     + '<div class="content-grid"><div class="main-column"><article class="card assignment-card"><span class="assignment-icon" aria-hidden="true">✦</span><span class="eyebrow">LA TUA CATEGORIA</span><h3>'
-    + escapeHtml(categoryName) + '</h3><p>Nomina un film che appartenga a questa categoria. Gli altri vedranno che hai partecipato, non il titolo.</p>'
-    + nominationBox + "</article>" + drawSection + '</div><aside class="side-column">'
+    + escapeHtml(categoryName) + '</h3><p>' + (night.phase === "category_draft"
+      ? "La categoria verrà scelta nell’ordine mostrato sopra."
+      : "Nomina un film che appartenga a questa categoria. Gli altri vedranno che hai partecipato, non il titolo.") + '</p>'
+    + nominationBox + "</article>" + drawSection + provisionalSection + '</div><aside class="side-column">'
     + '<article class="card card-pad"><div class="section-heading"><div><span class="section-kicker">I TUOI COMPAGNI</span><h2>Partecipanti</h2></div><span class="status-chip">'
     + submittedCount + "/" + memberCount + "</span></div>" + renderMemberRows(members, profileMap) + "</article>"
-    + '<div class="admin-control">' + renderAdminPanel(night, allNominated, poolRemaining, canDraw, hasRejected) + "</div></aside></div>";
-}
-
-function podiumLabel(position) {
-  if (position === 1) return "🥇 PRIMO POSTO";
-  if (position === 2) return "🥈 SECONDO POSTO";
-  if (position === 3) return "🥉 TERZO POSTO";
-  return "";
+    + '<div class="admin-control">' + renderAdminPanel(night, allNominated, poolRemaining, canDraw, hasRejected, canFinalize, ratingProgress) + "</div></aside></div>";
 }
 
 function moviePosterMarkup(posterUrl, title, className = "rank-poster") {
@@ -459,31 +559,6 @@ function moviePosterMarkup(posterUrl, title, className = "rank-poster") {
     return '<img class="' + className + '" src="' + escapeHtml(posterUrl) + '" alt="Locandina di ' + escapeHtml(title || "film") + '" loading="lazy">';
   }
   return '<div class="' + className + ' poster-placeholder" aria-hidden="true">🎞</div>';
-}
-
-function renderRankSlot(position, movie, nextPosition, totalFilms, isAdmin, podium = false) {
-  const isAvailable = position <= totalFilms;
-  const isNext = isAvailable && position === nextPosition;
-  const cardClass = ["rank-slot", movie ? "rank-slot-revealed" : "rank-slot-blank",
-    position <= 3 ? "rank-slot-podium" : "", position === 1 ? "rank-slot-winner" : "",
-    !isAvailable ? "rank-slot-unassigned" : "", isNext ? "rank-slot-next" : "",
-    podium ? "rank-slot-stage" : ""].filter(Boolean).join(" ");
-  const label = podiumLabel(position);
-  const body = '<span class="rank-slot-heading"><span class="rank-position">' + position + '</span>'
-    + '<span class="rank-slot-label">' + (label ? label : "POSIZIONE " + String(position).padStart(2, "0")) + '</span></span>'
-    + (movie
-      ? '<div class="rank-slot-movie">' + moviePosterMarkup(movie.poster_url, movie.title)
-        + '<div class="rank-slot-copy"><h3>' + escapeHtml(movie.title) + '</h3><p>' + escapeHtml(movie.category_name || "Cinema")
-        + '</p><p>Proposto da <strong>' + escapeHtml(movie.submitted_by || "Partecipante") + '</strong></p>'
-        + '<span class="rank-score">' + Number(movie.average_rating).toFixed(2) + ' / 5<small>🍿 · ' + Number(movie.vote_count || 0) + ' voti</small></span></div></div>'
-      : '<div class="rank-slot-empty">' + (isAvailable ? '<span class="rank-slot-seal">?</span><span>Da rivelare</span>' : '<span class="rank-slot-seal">—</span><span>Posizione non assegnata</span>') + '</div>');
-  const ariaLabel = movie
-    ? 'Posizione ' + position + ': ' + movie.title + ', media ' + Number(movie.average_rating).toFixed(2) + ' su 5'
-    : 'Posizione ' + position + (isNext && isAdmin ? ', seleziona per estrarre' : ', da rivelare');
-  if (isNext && isAdmin) {
-    return '<button type="button" class="' + cardClass + ' rank-slot-button" data-action="reveal-rank" aria-label="' + escapeHtml(ariaLabel) + '">' + body + '<span class="rank-slot-cta">Estrai questa posizione ↗</span></button>';
-  }
-  return '<article class="' + cardClass + '" aria-label="' + escapeHtml(ariaLabel) + '">' + body + '</article>';
 }
 
 function renderWinnerScreen(winner) {
@@ -503,8 +578,10 @@ function renderWinnerScreen(winner) {
     + '<p class="winner-kicker">🏆 IL FILM VINCITORE 🏆</p><h2>Il vincitore è…</h2><article class="winner-card">'
     + moviePosterMarkup(winner.poster_url, winner.title, "winner-poster") + '<div class="winner-copy"><span class="winner-place">1° POSTO</span>'
     + '<h3>' + escapeHtml(winner.title) + '</h3><p>' + escapeHtml(winner.category_name || "Cinema") + '</p>'
-    + '<p class="winner-submitter">Proposto da <strong>' + escapeHtml(winner.submitted_by || "Partecipante") + '</strong></p>'
-    + '<div class="winner-score">⭐ ' + Number(winner.average_rating).toFixed(2) + ' <small>/ 5 · ' + Number(winner.vote_count || 0) + ' voti</small></div>'
+    + '<p class="winner-submitter">Categoria scelta da <strong>' + escapeHtml(winner.selected_by || "Partecipante") + '</strong> · posizione #' + escapeHtml(winner.pick_position) + '</p>'
+    + '<div class="winner-score">⭐ ' + Number(winner.final_score).toFixed(2) + ' <small>/ 5 finale · media '
+    + Number(winner.average_rating).toFixed(2) + ' + bonus ' + Number(winner.pick_bonus).toFixed(2) + ' · '
+    + Number(winner.rating_count || 0) + ' valutazioni</small></div>'
     + '</div></article><p class="winner-footer">La serata cinema ha il suo campione.</p></div></div>';
 }
 
@@ -515,51 +592,21 @@ function renderLeaderboard() {
   }
   const state = dashboard.leaderboard;
   if (!state?.unlocked) {
-    leaderboardView.innerHTML = renderEmpty("La classifica è ancora segreta", "Quando tutte le nomination saranno estratte e votate, l’admin potrà rivelare le posizioni una alla volta.");
+    leaderboardView.innerHTML = renderEmpty("Classifica finale non ancora pubblicata", "I risultati provvisori sono nella sezione Partecipanti. L’admin pubblicherà la classifica quando finalizzerà la serata.");
     return;
   }
   if (state.total_films === 0) {
-    leaderboardView.innerHTML = '<div class="leaderboard-header"><div><span class="eyebrow">PREMIAZIONE</span><h2>Nessun film in classifica</h2><p>Tutti i titoli estratti sono stati sostituiti durante la verifica.</p></div></div>';
+    leaderboardView.innerHTML = '<div class="leaderboard-header"><div><span class="eyebrow">PREMIAZIONE</span><h2>Nessun film in classifica</h2><p>La serata è stata finalizzata senza film approvati.</p></div></div>';
     return;
   }
-  const remaining = Math.max(0, state.total_films - state.revealed);
-  const revealedMovies = dashboard.revealed || [];
-  const moviesByPosition = Object.fromEntries(revealedMovies.map((movie) => [Number(movie.position), movie]));
-  if (remaining === 0) {
-    const winner = moviesByPosition[1];
-    leaderboardView.innerHTML = winner
-      ? renderWinnerScreen(winner)
-      : renderEmpty("Classifica completa", "Tutte le posizioni sono state rivelate.");
-    return;
-  }
-  const nextPosition = state.total_films - state.revealed;
-  let adminReveal = "";
-  if (currentProfile?.role === "admin" && remaining > 0) {
-    adminReveal = '<button class="button button-primary" data-action="reveal-rank">Estrai la posizione ' + nextPosition + ' <span aria-hidden="true">↗</span></button>';
-  } else if (currentProfile?.role === "admin") {
-    adminReveal = '<span class="status-chip success">Classifica completa</span>';
-  } else if (remaining > 0) {
-    adminReveal = '<span class="small-muted">L’admin sta rivelando la prossima posizione.</span>';
-  } else {
-    adminReveal = '<span class="status-chip success">Classifica completa</span>';
-  }
-  const slotCount = Math.max(10, Number(state.total_films));
-  if (remaining <= 3) {
-    const podiumSlots = [2, 1, 3].map((position) => renderRankSlot(
-      position, moviesByPosition[position], nextPosition, Number(state.total_films), currentProfile?.role === "admin", true,
-    )).join("");
-    leaderboardView.innerHTML = '<div class="leaderboard-header podium-header"><div><span class="eyebrow">LA PREMIAZIONE · GRAN FINALE</span><h2>È il momento del podio</h2><p>Le ultime posizioni si svelano dalla medaglia di bronzo al vincitore.</p></div>'
-      + '<div class="reveal-progress">' + state.revealed + ' di ' + state.total_films + ' film rivelati<div class="admin-control">' + adminReveal + '</div></div></div>'
-      + '<div class="podium-board">' + podiumSlots + '</div>'
-      + (currentProfile?.role === "admin" ? '<p class="podium-hint">Seleziona la posizione evidenziata oppure usa il pulsante per rivelarla.</p>' : '<p class="podium-hint">L’admin sta rivelando il podio.</p>');
-    return;
-  }
-  const slots = Array.from({ length: slotCount }, (_, index) => slotCount - index)
-    .map((position) => renderRankSlot(position, moviesByPosition[position], nextPosition, Number(state.total_films), currentProfile?.role === "admin"))
-    .join("");
-  leaderboardView.innerHTML = '<div class="leaderboard-header"><div><span class="eyebrow">LA PREMIAZIONE</span><h2>La classifica</h2><p>Dal fondo si sale al podio, una posizione alla volta.</p></div><div class="reveal-progress">'
-    + state.revealed + ' di ' + state.total_films + ' film rivelati<div class="admin-control">' + adminReveal + '</div></div></div>'
-    + '<div class="ranking-board">' + slots + '</div>';
+  const scores = dashboard.revealed || [];
+  const winners = scores.filter((film) => film.final_score !== null && Number(film.rank_position) === 1);
+  const winner = winners.length === 1 ? renderWinnerScreen(winners[0])
+    : winners.length > 1 ? '<div class="tie-banner"><span class="eyebrow">PARITÀ AL PRIMO POSTO</span><h2>'
+      + winners.length + ' film condividono la vittoria</h2><p>Media e punteggio finale identici: il primo posto è condiviso.</p></div>' : "";
+  leaderboardView.innerHTML = '<div class="leaderboard-header"><div><span class="eyebrow">PREMIAZIONE · CLASSIFICA FINALE</span>'
+    + '<h2>La classifica della serata</h2><p>Bonus pick applicato una volta per film. Le valutazioni mancanti non entrano nella media.</p></div>'
+    + '<span class="status-chip success">' + scores.length + ' film</span></div>' + winner + renderScoreList(scores, false);
 }
 
 function renderAll() {
@@ -625,7 +672,14 @@ async function runAction(action, button) {
     if (action === "start-night") {
       const { error } = await supabase.rpc("start_movie_night");
       if (error) throw error;
-      toast("Serata avviata: le categorie sono state assegnate.", "success");
+      toast("Draft avviato: l’ordine casuale è stato salvato.", "success");
+    } else if (action === "select-category") {
+      const { error } = await supabase.rpc("select_draft_category", {
+        p_night_id: dashboard.night.id,
+        p_category_id: Number(button.dataset.categoryId),
+      });
+      if (error) throw error;
+      toast("Categoria scelta. Il turno passa al prossimo partecipante.", "success");
     } else if (action === "draw-film") {
       const { data: drawnFilmId, error } = await supabase.rpc("admin_draw_next", { p_night_id: dashboard.night.id });
       if (error) throw error;
@@ -649,11 +703,11 @@ async function runAction(action, button) {
       });
       if (error) throw error;
       toast("Il tuo voto è stato registrato.", "success");
-    } else if (action === "reveal-rank") {
-      const { error } = await supabase.rpc("admin_reveal_next_rank", { p_night_id: dashboard.night.id });
+    } else if (action === "finalize-night") {
+      const { error } = await supabase.rpc("finalize_movie_night", { p_night_id: dashboard.night.id });
       if (error) throw error;
       activeTab = "leaderboard";
-      toast("Una nuova posizione è stata rivelata.", "success");
+      toast("Classifica finale pubblicata.", "success");
     }
     await refreshDashboard();
   } catch (error) {

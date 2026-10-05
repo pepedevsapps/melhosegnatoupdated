@@ -2,7 +2,12 @@
   "name": "me-lho-segnato",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Me l'ho segnato static web app and Supabase project tooling",
+  "scripts": {
+    "test": "node --test",
+    "build": "node scripts/build.mjs"
+  },
   "devDependencies": {
     "supabase": "^2.119.0"
   }
