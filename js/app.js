@@ -140,6 +140,7 @@ async function refreshDashboard(quiet = false) {
       .eq("night_id", night.id).order("drawn_at", { ascending: true });
     if (drawError) throw drawError;
     const draws = drawRows || [];
+    let movieMetadata = {};
     let myNomination = null;
     let assignment = null;
     let leaderboard = null;
@@ -158,14 +159,17 @@ async function refreshDashboard(quiet = false) {
 
       const drawIds = draws.map((draw) => draw.id);
       if (drawIds.length) {
-        const [{ data: seenRows, error: seenError }, { data: ratingRows, error: ratingError }] = await Promise.all([
+        const [{ data: seenRows, error: seenError }, { data: ratingRows, error: ratingError }, { data: metadataRows, error: metadataError }] = await Promise.all([
           supabase.from("seen_votes").select("drawn_film_id,has_seen").eq("user_id", currentUser.id).in("drawn_film_id", drawIds),
           supabase.from("movie_ratings").select("drawn_film_id,rating").eq("user_id", currentUser.id).in("drawn_film_id", drawIds),
+          supabase.from("drawn_film_metadata").select("drawn_film_id,found,imdb_id,title,year,rated,released,runtime,genre,director,actors,plot,language,country,awards,poster_url,imdb_rating,imdb_votes,metascore").in("drawn_film_id", drawIds),
         ]);
         if (seenError) throw seenError;
         if (ratingError) throw ratingError;
+        if (metadataError) throw metadataError;
         for (const row of seenRows || []) mySeen[row.drawn_film_id] = row.has_seen;
         for (const row of ratingRows || []) myRatings[row.drawn_film_id] = Number(row.rating);
+        movieMetadata = Object.fromEntries((metadataRows || []).map((row) => [row.drawn_film_id, row]));
       }
       const { data: stateRows, error: stateError } = await supabase.rpc("get_leaderboard_state", { p_night_id: night.id });
       if (stateError) throw stateError;
@@ -177,7 +181,7 @@ async function refreshDashboard(quiet = false) {
       }
     }
 
-    dashboard = { night, isMember, members, profileMap, draws, categories, myNomination,
+    dashboard = { night, isMember, members, profileMap, draws, categories, movieMetadata, myNomination,
       mySeen, myRatings, assignment, leaderboard, revealed };
     renderAll();
   } catch (error) {
@@ -233,7 +237,30 @@ function ratingLabel(value) {
   return value % 1 ? whole + "½" : String(whole);
 }
 
-function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNominationId) {
+function renderAutocompleteField(inputId, placeholder) {
+  return '<div class="movie-autocomplete" data-autocomplete><input id="' + inputId + '" name="title" maxlength="140" required autocomplete="off" aria-autocomplete="list" aria-expanded="false" aria-controls="' + inputId + '-suggestions" placeholder="' + placeholder + '">'
+    + '<input type="hidden" name="omdb_id"><div id="' + inputId + '-suggestions" class="autocomplete-suggestions" role="listbox" hidden></div></div>';
+}
+
+function renderMovieMetadata(metadata) {
+  if (!metadata) return "";
+  if (!metadata.found) return '<p class="movie-data-unavailable">Dettagli OMDb non disponibili per questo titolo.</p>';
+  const facts = [metadata.year, metadata.rated, metadata.runtime, metadata.genre].filter(Boolean).map(escapeHtml).join(" · ");
+  const credits = [metadata.director ? "Regia: " + metadata.director : "", metadata.actors ? "Cast: " + metadata.actors : ""].filter(Boolean).join(" · ");
+  const poster = metadata.poster_url && /^https:\/\//i.test(metadata.poster_url)
+    ? '<img class="movie-poster" src="' + escapeHtml(metadata.poster_url) + '" alt="Locandina di ' + escapeHtml(metadata.title) + '" loading="lazy">'
+    : '<div class="movie-poster-placeholder" aria-hidden="true">🎞</div>';
+  const score = metadata.imdb_rating ? '<span class="movie-rating">★ ' + escapeHtml(metadata.imdb_rating) + '<small> / 10 IMDb' + (metadata.imdb_votes ? ' · ' + escapeHtml(metadata.imdb_votes) + ' voti' : '') + '</small></span>' : "";
+  return '<div class="movie-details">' + poster + '<div class="movie-details-copy">'
+    + '<div class="movie-details-top">' + (facts ? '<span class="movie-facts">' + facts + '</span>' : "") + score + '</div>'
+    + (metadata.plot ? '<p class="movie-plot">' + escapeHtml(metadata.plot) + '</p>' : "")
+    + (credits ? '<p class="movie-credits">' + escapeHtml(credits) + '</p>' : "")
+    + (metadata.awards ? '<p class="movie-credits">' + escapeHtml(metadata.awards) + '</p>' : "")
+    + '<p class="movie-attribution">Dati film: OMDb · valutazione IMDb</p>'
+    + '</div></div>';
+}
+
+function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNominationId, metadata) {
   const category = categories[draw.category_id] || "Cinema";
   let stateHtml = "";
   if (draw.status === "checking") {
@@ -257,7 +284,7 @@ function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNom
     if (draw.nomination_id === myNominationId) {
       stateHtml += '<form id="replace-nomination-form" class="nomination-form" data-drawn-film-id="' + draw.id + '">'
         + '<label for="replacement-title-' + draw.id + '">Inserisci un altro film per questa estrazione</label>'
-        + '<input id="replacement-title-' + draw.id + '" name="title" maxlength="140" required placeholder="Titolo del nuovo film…">'
+        + renderAutocompleteField('replacement-title-' + draw.id, 'Titolo del nuovo film…')
         + '<button class="button button-primary" type="submit">Sostituisci film <span aria-hidden="true">→</span></button></form>';
     } else {
       stateHtml += '<p class="small-muted">In attesa del nuovo titolo da chi ha inviato la nomination.</p>';
@@ -276,8 +303,8 @@ function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNom
         + draw.id + '" data-value="' + value + '" aria-label="' + ratingLabel(value) + ' popcorn"><span class="pop">🍿</span>'
         + ratingLabel(value) + "</button>").join("") + "</div>" : "") + "</div>";
   }
-  return '<article class="film-card"><div><h3 class="film-title">' + escapeHtml(draw.title) + '</h3><div class="film-meta">'
-    + escapeHtml(category) + " · estratto " + (index + 1) + "</div>" + stateHtml
+  return '<article class="film-card"><div class="film-card-content"><h3 class="film-title">' + escapeHtml(draw.title) + '</h3><div class="film-meta">'
+    + escapeHtml(category) + " · estratto " + (index + 1) + "</div>" + renderMovieMetadata(metadata) + stateHtml
     + '</div><span class="film-num">' + String(index + 1).padStart(2, "0") + "</span></article>";
 }
 
@@ -291,7 +318,7 @@ function renderNight() {
     return;
   }
 
-  const { night, members, profileMap, draws, categories, isMember, assignment, myNomination, mySeen, myRatings, leaderboard } = dashboard;
+  const { night, members, profileMap, draws, categories, movieMetadata = {}, isMember, assignment, myNomination, mySeen, myRatings, leaderboard } = dashboard;
   if (!isMember) {
     nightView.innerHTML = renderEmpty("Non sei in questa serata", "Questa serata è stata aperta prima della tua registrazione. Potrai partecipare alla prossima.")
       + (currentProfile?.role === "admin" ? '<div class="admin-control">' + renderAdminPanel(night, false, 0, false) + "</div>" : "");
@@ -310,10 +337,10 @@ function renderNight() {
   const categoryName = assignment?.category_name || "Categoria assegnata";
   const nominationBox = myNomination
     ? '<div class="your-nomination"><span aria-hidden="true">✓</span> Nomination inviata: <strong>' + escapeHtml(myNomination.title) + "</strong></div>"
-    : '<form id="nomination-form" class="nomination-form"><label for="movie-title">Scegli il tuo film</label><input id="movie-title" name="title" maxlength="140" required placeholder="Titolo del film…"><button class="button button-primary" type="submit">Invia nomination <span aria-hidden="true">→</span></button></form>';
+    : '<form id="nomination-form" class="nomination-form"><label for="movie-title">Scegli il tuo film</label>' + renderAutocompleteField("movie-title", "Titolo del film…") + '<button class="button button-primary" type="submit">Invia nomination <span aria-hidden="true">→</span></button></form>';
   const drawSection = draws.length
     ? '<div class="divider"></div><div class="section-heading"><div><span class="section-kicker">POOL ESTRATTO</span><h2>Film della serata</h2><p>Vengono mostrati solo dopo il sorteggio.</p></div></div><div class="film-list">'
-      + draws.map((draw, i) => renderDrawCard(draw, i, categories, mySeen, myRatings, night.phase, myNomination?.id)).join("") + "</div>"
+      + draws.map((draw, i) => renderDrawCard(draw, i, categories, mySeen, myRatings, night.phase, myNomination?.id, movieMetadata[draw.id])).join("") + "</div>"
     : '<div class="divider"></div><p class="small-muted">I titoli restano segreti fino al sorteggio. Per ora puoi vedere solo chi ha completato la nomination.</p>';
   const unlockedText = leaderboard?.unlocked
     ? '<span class="status-chip success">Classifica sbloccata</span>'
@@ -344,6 +371,51 @@ function podiumLabel(position) {
   return "";
 }
 
+function moviePosterMarkup(posterUrl, title, className = "rank-poster") {
+  if (posterUrl && /^https:\/\//i.test(posterUrl)) {
+    return '<img class="' + className + '" src="' + escapeHtml(posterUrl) + '" alt="Locandina di ' + escapeHtml(title || "film") + '" loading="lazy">';
+  }
+  return '<div class="' + className + ' poster-placeholder" aria-hidden="true">🎞</div>';
+}
+
+function renderRankSlot(position, movie, nextPosition, totalFilms, isAdmin, podium = false) {
+  const isAvailable = position <= totalFilms;
+  const isNext = isAvailable && position === nextPosition;
+  const cardClass = ["rank-slot", movie ? "rank-slot-revealed" : "rank-slot-blank",
+    position <= 3 ? "rank-slot-podium" : "", position === 1 ? "rank-slot-winner" : "",
+    !isAvailable ? "rank-slot-unassigned" : "", isNext ? "rank-slot-next" : "",
+    podium ? "rank-slot-stage" : ""].filter(Boolean).join(" ");
+  const label = podiumLabel(position);
+  const body = '<span class="rank-slot-heading"><span class="rank-position">' + position + '</span>'
+    + '<span class="rank-slot-label">' + (label ? label : "POSIZIONE " + String(position).padStart(2, "0")) + '</span></span>'
+    + (movie
+      ? '<div class="rank-slot-movie">' + moviePosterMarkup(movie.poster_url, movie.title)
+        + '<div class="rank-slot-copy"><h3>' + escapeHtml(movie.title) + '</h3><p>' + escapeHtml(movie.category_name || "Cinema")
+        + '</p><p>Proposto da <strong>' + escapeHtml(movie.submitted_by || "Partecipante") + '</strong></p>'
+        + '<span class="rank-score">' + Number(movie.average_rating).toFixed(2) + ' / 5<small>🍿 · ' + Number(movie.vote_count || 0) + ' voti</small></span></div></div>'
+      : '<div class="rank-slot-empty">' + (isAvailable ? '<span class="rank-slot-seal">?</span><span>Da rivelare</span>' : '<span class="rank-slot-seal">—</span><span>Posizione non assegnata</span>') + '</div>');
+  const ariaLabel = movie
+    ? 'Posizione ' + position + ': ' + movie.title + ', media ' + Number(movie.average_rating).toFixed(2) + ' su 5'
+    : 'Posizione ' + position + (isNext && isAdmin ? ', seleziona per estrarre' : ', da rivelare');
+  if (isNext && isAdmin) {
+    return '<button type="button" class="' + cardClass + ' rank-slot-button" data-action="reveal-rank" aria-label="' + escapeHtml(ariaLabel) + '">' + body + '<span class="rank-slot-cta">Estrai questa posizione ↗</span></button>';
+  }
+  return '<article class="' + cardClass + '" aria-label="' + escapeHtml(ariaLabel) + '">' + body + '</article>';
+}
+
+function renderWinnerScreen(winner) {
+  const confetti = Array.from({ length: 48 }, (_, index) => '<i style="left:' + (index * 100 / 48).toFixed(2)
+    + '%;animation-delay:-' + (index * 0.11).toFixed(2) + 's"></i>').join("");
+  return '<div class="winner-screen"><div class="confetti-rain" aria-hidden="true">' + confetti + '</div>'
+    + '<div class="winner-content"><span class="eyebrow">IL VERDETTO È ARRIVATO</span><div class="winner-crown" aria-hidden="true">♛</div>'
+    + '<p class="winner-kicker">🏆 IL FILM VINCITORE 🏆</p><h2>Il vincitore è…</h2><article class="winner-card">'
+    + moviePosterMarkup(winner.poster_url, winner.title, "winner-poster") + '<div class="winner-copy"><span class="winner-place">1° POSTO</span>'
+    + '<h3>' + escapeHtml(winner.title) + '</h3><p>' + escapeHtml(winner.category_name || "Cinema") + '</p>'
+    + '<p class="winner-submitter">Proposto da <strong>' + escapeHtml(winner.submitted_by || "Partecipante") + '</strong></p>'
+    + '<div class="winner-score">⭐ ' + Number(winner.average_rating).toFixed(2) + ' <small>/ 5 · ' + Number(winner.vote_count || 0) + ' voti</small></div>'
+    + '</div></article><p class="winner-footer">La serata cinema ha il suo campione.</p></div></div>';
+}
+
 function renderLeaderboard() {
   if (!dashboard?.night || !dashboard.isMember) {
     leaderboardView.innerHTML = renderEmpty("Classifica non disponibile", "Partecipa a una serata attiva per vedere la premiazione.");
@@ -359,9 +431,19 @@ function renderLeaderboard() {
     return;
   }
   const remaining = Math.max(0, state.total_films - state.revealed);
+  const revealedMovies = dashboard.revealed || [];
+  const moviesByPosition = Object.fromEntries(revealedMovies.map((movie) => [Number(movie.position), movie]));
+  if (remaining === 0) {
+    const winner = moviesByPosition[1];
+    leaderboardView.innerHTML = winner
+      ? renderWinnerScreen(winner)
+      : renderEmpty("Classifica completa", "Tutte le posizioni sono state rivelate.");
+    return;
+  }
+  const nextPosition = state.total_films - state.revealed;
   let adminReveal = "";
   if (currentProfile?.role === "admin" && remaining > 0) {
-    adminReveal = '<button class="button button-primary" data-action="reveal-rank">Rivela la prossima posizione <span aria-hidden="true">↗</span></button>';
+    adminReveal = '<button class="button button-primary" data-action="reveal-rank">Estrai la posizione ' + nextPosition + ' <span aria-hidden="true">↗</span></button>';
   } else if (currentProfile?.role === "admin") {
     adminReveal = '<span class="status-chip success">Classifica completa</span>';
   } else if (remaining > 0) {
@@ -369,22 +451,23 @@ function renderLeaderboard() {
   } else {
     adminReveal = '<span class="status-chip success">Classifica completa</span>';
   }
-  const cards = (dashboard.revealed || []).map((movie) => {
-    const podium = podiumLabel(movie.position);
-    return '<article class="rank-card ' + (movie.position <= 3 ? "rank-top" : "") + '"><div class="rank-position">'
-      + movie.position + '</div><div><h3 class="rank-title">' + escapeHtml(movie.title)
-      + (podium ? '<span class="podium-label">' + podium + "</span>" : "") + '</h3><div class="rank-meta">'
-      + escapeHtml(movie.category_name) + " · " + movie.vote_count + " voti</div></div><div class=\"rank-score\">"
-      + Number(movie.average_rating).toFixed(2) + "<small>🍿 media</small></div></article>";
-  }).join("");
-  leaderboardView.innerHTML = '<div class="leaderboard-header"><div><span class="eyebrow">LA PREMIAZIONE</span><h2>Dal fondo al podio</h2><p>Ogni rivelazione mostra una posizione, dalla meno votata alla più amata.</p></div><div class="reveal-progress">'
-    + state.revealed + " di " + state.total_films + ' rivelate<div class="admin-control" style="margin-top:10px">'
-    + adminReveal + "</div></div></div>"
-    + (remaining ? '<div class="card card-pad" style="margin-bottom:14px"><div class="small-muted">' + remaining
-      + (remaining === 1 ? " posizione da rivelare" : " posizioni da rivelare")
-      + (currentProfile?.role === "admin" ? " · premi il pulsante per continuare" : " · attendi il prossimo reveal dell’admin")
-      + "</div></div>" : "")
-    + '<div class="reveal-list">' + (cards || '<div class="empty-state"><div><div class="empty-icon">🎞</div><h2>La prima posizione è ancora coperta</h2><p>L’admin può rivelare la classifica dalla posizione più bassa.</p></div></div>') + "</div>";
+  const slotCount = Math.max(10, Number(state.total_films));
+  if (remaining <= 3) {
+    const podiumSlots = [2, 1, 3].map((position) => renderRankSlot(
+      position, moviesByPosition[position], nextPosition, Number(state.total_films), currentProfile?.role === "admin", true,
+    )).join("");
+    leaderboardView.innerHTML = '<div class="leaderboard-header podium-header"><div><span class="eyebrow">LA PREMIAZIONE · GRAN FINALE</span><h2>È il momento del podio</h2><p>Le ultime posizioni si svelano dalla medaglia di bronzo al vincitore.</p></div>'
+      + '<div class="reveal-progress">' + state.revealed + ' di ' + state.total_films + ' film rivelati<div class="admin-control">' + adminReveal + '</div></div></div>'
+      + '<div class="podium-board">' + podiumSlots + '</div>'
+      + (currentProfile?.role === "admin" ? '<p class="podium-hint">Seleziona la posizione evidenziata oppure usa il pulsante per rivelarla.</p>' : '<p class="podium-hint">L’admin sta rivelando il podio.</p>');
+    return;
+  }
+  const slots = Array.from({ length: slotCount }, (_, index) => slotCount - index)
+    .map((position) => renderRankSlot(position, moviesByPosition[position], nextPosition, Number(state.total_films), currentProfile?.role === "admin"))
+    .join("");
+  leaderboardView.innerHTML = '<div class="leaderboard-header"><div><span class="eyebrow">LA PREMIAZIONE</span><h2>La classifica</h2><p>Dal fondo si sale al podio, una posizione alla volta.</p></div><div class="reveal-progress">'
+    + state.revealed + ' di ' + state.total_films + ' film rivelati<div class="admin-control">' + adminReveal + '</div></div></div>'
+    + '<div class="ranking-board">' + slots + '</div>';
 }
 
 function renderAll() {
@@ -414,8 +497,10 @@ async function runAction(action, button) {
       if (error) throw error;
       toast("Serata avviata: le categorie sono state assegnate.", "success");
     } else if (action === "draw-film") {
-      const { error } = await supabase.rpc("admin_draw_next", { p_night_id: dashboard.night.id });
+      const { data: drawnFilmId, error } = await supabase.rpc("admin_draw_next", { p_night_id: dashboard.night.id });
       if (error) throw error;
+      const detailsError = await loadOmdbDetails(drawnFilmId);
+      if (detailsError) toast("Film estratto. I dettagli OMDb non sono ancora disponibili.", "error");
       toast("Film estratto. Tutti possono votare se l’hanno già visto.", "success");
     } else if (action === "seen-vote") {
       const { error } = await supabase.rpc("submit_seen_vote", {
@@ -445,6 +530,92 @@ async function runAction(action, button) {
     if (button) button.disabled = false;
   }
 }
+
+async function loadOmdbDetails(drawnFilmId) {
+  if (!drawnFilmId) return new Error("ID estrazione non disponibile");
+  try {
+    const { error } = await supabase.functions.invoke("omdb", { body: { action: "details", drawnFilmId } });
+    return error || null;
+  } catch (error) {
+    return error;
+  }
+}
+
+const autocompleteTimers = new WeakMap();
+function updateSuggestions(input, results, status = "") {
+  const container = input.closest("[data-autocomplete]");
+  const list = container?.querySelector(".autocomplete-suggestions");
+  if (!list) return;
+  if (status) {
+    list.innerHTML = '<div class="autocomplete-message">' + escapeHtml(status) + '</div>';
+  } else {
+    list.innerHTML = results.map((movie) => '<button type="button" class="autocomplete-option" role="option" data-imdb-id="'
+      + escapeHtml(movie.imdbID) + '" data-title="' + escapeHtml(movie.Title) + '"><span>' + escapeHtml(movie.Title)
+      + '</span><small>' + escapeHtml(movie.Year || "") + '</small></button>').join("")
+      || '<div class="autocomplete-message">Nessun film trovato.</div>';
+  }
+  list.hidden = false;
+  input.setAttribute("aria-expanded", "true");
+}
+
+document.addEventListener("input", (event) => {
+  const input = event.target.closest(".movie-autocomplete input[name=title]");
+  if (!input) return;
+  const wrap = input.closest("[data-autocomplete]");
+  wrap.querySelector('input[name="omdb_id"]').value = "";
+  const list = wrap.querySelector(".autocomplete-suggestions");
+  const query = input.value.trim().replace(/\s+/g, " ");
+  if (autocompleteTimers.has(input)) clearTimeout(autocompleteTimers.get(input));
+  if (query.length < 3) {
+    list.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    return;
+  }
+  const timer = setTimeout(async () => {
+    const key = "omdb-search:" + query.toLocaleLowerCase();
+    let results = null;
+    try {
+      try {
+        const cached = sessionStorage.getItem(key);
+        if (cached) results = JSON.parse(cached);
+      } catch { /* private browsing or a stale entry: continue without browser cache */ }
+      if (results === null) {
+        updateSuggestions(input, [], "Cerco i titoli…");
+        const { data, error } = await supabase.functions.invoke("omdb", { body: { action: "search", query } });
+        if (error) throw error;
+        results = data?.results || [];
+        try { sessionStorage.setItem(key, JSON.stringify(results)); } catch { /* session cache is best effort */ }
+      }
+      if (input.isConnected && input.value.trim().replace(/\s+/g, " ") === query) updateSuggestions(input, results);
+    } catch (error) {
+      if (input.isConnected && input.value.trim().replace(/\s+/g, " ") === query) {
+        updateSuggestions(input, [], error?.message || "Ricerca temporaneamente non disponibile.");
+      }
+    }
+  }, 750);
+  autocompleteTimers.set(input, timer);
+});
+
+document.addEventListener("click", (event) => {
+  const option = event.target.closest(".autocomplete-option");
+  if (option) {
+    const wrap = option.closest("[data-autocomplete]");
+    const input = wrap.querySelector('input[name="title"]');
+    input.value = option.dataset.title;
+    wrap.querySelector('input[name="omdb_id"]').value = option.dataset.imdbId;
+    const list = wrap.querySelector(".autocomplete-suggestions");
+    list.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    input.focus();
+    return;
+  }
+  if (!event.target.closest("[data-autocomplete]")) {
+    document.querySelectorAll(".autocomplete-suggestions:not([hidden])").forEach((list) => {
+      list.hidden = true;
+      list.closest("[data-autocomplete]")?.querySelector('input[name="title"]')?.setAttribute("aria-expanded", "false");
+    });
+  }
+});
 
 authSwitch.addEventListener("click", () => setAuthMode(authMode === "login" ? "signup" : "login"));
 authForm.addEventListener("submit", async (event) => {
@@ -501,6 +672,7 @@ document.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = form.querySelector('button[type="submit"]');
   const title = new FormData(form).get("title").toString().trim();
+  const omdbId = new FormData(form).get("omdb_id")?.toString() || null;
   const originalButtonLabel = button.innerHTML;
   button.disabled = true;
   button.textContent = "Invio…";
@@ -510,14 +682,20 @@ document.addEventListener("submit", async (event) => {
       ? await supabase.rpc("replace_rejected_nomination", {
           p_drawn_film_id: form.dataset.drawnFilmId,
           p_title: title,
+          p_omdb_id: omdbId,
         })
       : await supabase.rpc("submit_nomination", {
           p_night_id: dashboard.night.id,
           p_title: title,
+          p_omdb_id: omdbId,
         });
     if (error) throw error;
     submitted = true;
     button.textContent = "Salvata ✓";
+    if (isReplacement) {
+      const detailsError = await loadOmdbDetails(form.dataset.drawnFilmId);
+      if (detailsError) toast("Titolo sostituito, ma i dettagli OMDb non sono ancora disponibili.", "error");
+    }
     toast(isReplacement
       ? "Film sostituito: la votazione riparte sul nuovo titolo."
       : "Nomination salvata: il titolo resta segreto finché non viene estratto.", "success");
@@ -554,7 +732,8 @@ async function initialize() {
 }
 
 window.setInterval(() => {
-  if (currentUser && !loading) refreshDashboard(true);
+  if (currentUser && !loading && dashboard?.night?.phase !== "complete"
+    && !document.activeElement?.closest("[data-autocomplete]")) refreshDashboard(true);
 }, 12000);
 
 initialize();

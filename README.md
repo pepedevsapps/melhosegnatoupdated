@@ -9,10 +9,12 @@ Web app responsive, pubblicabile su GitHub Pages. Usa Supabase Auth e Postgres p
 - Una serata attiva per progetto Supabase; all'avvio vengono inclusi gli account già registrati.
 - Assegnazione casuale delle categorie. Se le persone sono più delle categorie, le categorie ricominciano dopo una nuova mescolata.
 - Nomination privata: ogni partecipante vede il proprio titolo e lo stato di invio degli altri, ma non i loro titoli.
+- Ricerca OMDb dei titoli con completamento automatico. I dettagli, la locandina e la valutazione IMDb compaiono quando l'admin estrae il film.
 - Sorteggio casuale da parte dell'admin. Ogni nomination estratta esce definitivamente dal pool.
 - Verifica anonima “L'ho visto / Non l'ho visto”, con conteggio dei voti e percentuale aggregata in tempo reale. Se più del 55% dichiara di averlo già visto, chi ha proposto il film può sostituire il titolo sulla stessa estrazione; la verifica riparte da zero.
 - Valutazione dei film approvati da 1 a 5 popcorn, con mezzi punti.
 - Classifica sbloccata quando il pool è vuoto e tutti i film approvati hanno ricevuto il voto di tutti. L'admin rivela una posizione alla volta, dall'ultima fino al podio.
+- La premiazione mostra le posizioni coperte, poi un podio con reveal dal terzo al primo posto e una schermata vincitore con coriandoli, locandina, autore della nomination e voto medio.
 - I titoli duplicati nella stessa serata sono rifiutati dopo normalizzazione di maiuscole e spazi.
 - Aggiornamento automatico della dashboard ogni 12 secondi, oltre al pulsante Aggiorna.
 
@@ -22,6 +24,7 @@ Web app responsive, pubblicabile su GitHub Pages. Usa Supabase Auth e Postgres p
 - Un repository GitHub con GitHub Pages abilitato tramite GitHub Actions.
 - Un indirizzo email da associare all'account admin.
 - Un browser moderno con accesso a internet (la libreria Supabase JS viene caricata da jsDelivr).
+- Una chiave API OMDb configurata come secret della Supabase Edge Function.
 
 ## 1. Configura Supabase
 
@@ -77,6 +80,17 @@ npx supabase config push --project-ref pmfnvpmfmmixmfncjvti
 ```
 
 `supabase/config.toml` imposta il Site URL di produzione su `https://pepedevsapps.github.io/melhosegnatoupdated/` e consente i redirect sia dal sito pubblicato sia dagli indirizzi locali `localhost:8000` e `127.0.0.1:8000`.
+
+## OMDb
+
+La chiave OMDb non va inserita nel browser o nel repository. Impostala come secret Supabase e pubblica la Edge Function:
+
+```bash
+npx supabase secrets set OMDB_API_KEY="LA_TUA_CHIAVE" --project-ref pmfnvpmfmmixmfncjvti
+npx supabase functions deploy omdb --project-ref pmfnvpmfmmixmfncjvti
+```
+
+Le ricerche partono dopo una pausa nella digitazione, da tre caratteri in su, e i risultati vengono riutilizzati nella sessione e in cache condivisa. Il database blocca le richieste quando raggiungono 950 chiamate in una finestra mobile di 24 ore, lasciando 50 chiamate di margine sul limite OMDb di 1.000. I dettagli di ogni titolo vengono recuperati una sola volta e conservati per 180 giorni.
 
 ## 4. Pubblica su GitHub Pages
 

@@ -58,11 +58,13 @@ create table if not exists public.movie_nominations (
   category_id integer not null references public.film_categories(id),
   title text not null check (char_length(title) between 2 and 140),
   normalized_title text not null,
+  omdb_id text,
   status text not null default 'queued' check (status in ('queued','drawn')),
   created_at timestamptz not null default now(),
   unique(night_id,user_id),
   unique(night_id,normalized_title)
 );
+alter table public.movie_nominations add column if not exists omdb_id text;
 create table if not exists public.drawn_films (
   id uuid primary key default gen_random_uuid(),
   night_id uuid not null references public.movie_nights(id) on delete cascade,
@@ -78,6 +80,38 @@ create table if not exists public.drawn_films (
   decided_at timestamptz
 );
 alter table public.drawn_films add column if not exists vote_count integer not null default 0 check (vote_count >= 0);
+create table if not exists public.drawn_film_metadata (
+  drawn_film_id uuid primary key references public.drawn_films(id) on delete cascade,
+  found boolean not null default true,
+  imdb_id text,
+  title text not null,
+  year text,
+  rated text,
+  released text,
+  runtime text,
+  genre text,
+  director text,
+  actors text,
+  plot text,
+  language text,
+  country text,
+  awards text,
+  poster_url text,
+  imdb_rating text,
+  imdb_votes text,
+  metascore text,
+  updated_at timestamptz not null default now()
+);
+create table if not exists public.omdb_cache (
+  cache_key text primary key,
+  payload jsonb not null,
+  fetched_at timestamptz not null default now()
+);
+create table if not exists public.omdb_api_call_log (
+  id bigint generated always as identity primary key,
+  called_at timestamptz not null default now()
+);
+create index if not exists omdb_api_call_log_called_at_idx on public.omdb_api_call_log(called_at);
 -- Le risposte individuali restano private; ai membri viene mostrato solo il conteggio aggregato.
 create table if not exists public.seen_votes (
   drawn_film_id uuid not null references public.drawn_films(id) on delete cascade,
@@ -132,6 +166,26 @@ create or replace function public.is_night_member(p_night_id uuid)
 returns boolean language sql stable security definer set search_path='' 
 as $$ select exists(select 1 from public.night_members where night_id=p_night_id and user_id=auth.uid()); $$;
 
+create or replace function public.reserve_omdb_api_call(p_daily_limit integer)
+returns boolean language plpgsql security definer set search_path=''
+as $$
+declare
+  v_call_count integer;
+begin
+  if p_daily_limit < 1 or p_daily_limit > 950 then
+    raise exception 'Limite OMDb non valida.';
+  end if;
+  -- A rolling window avoids double quota at a calendar midnight boundary.
+  perform pg_advisory_xact_lock(824019492347::bigint);
+  delete from public.omdb_api_call_log where called_at < now() - interval '24 hours';
+  select count(*) into v_call_count from public.omdb_api_call_log
+    where called_at >= now() - interval '24 hours';
+  if v_call_count >= p_daily_limit then return false; end if;
+  insert into public.omdb_api_call_log(called_at) values(now());
+  return true;
+end;
+$$;
+
 create or replace function public.start_movie_night()
 returns uuid language plpgsql security definer set search_path='' 
 as $$
@@ -177,7 +231,8 @@ begin
 end;
 $$;
 
-create or replace function public.submit_nomination(p_night_id uuid,p_title text)
+drop function if exists public.submit_nomination(uuid,text);
+create or replace function public.submit_nomination(p_night_id uuid,p_title text,p_omdb_id text)
 returns void language plpgsql security definer set search_path='' 
 as $$
 declare
@@ -199,12 +254,15 @@ begin
     raise exception 'Hai già inviato la nomination.';
   end if;
   v_normalized := lower(regexp_replace(v_title,'\s+',' ','g'));
-  insert into public.movie_nominations(night_id,user_id,category_id,title,normalized_title)
-  values(p_night_id,auth.uid(),v_category_id,v_title,v_normalized);
+  insert into public.movie_nominations(night_id,user_id,category_id,title,normalized_title,omdb_id)
+  values(p_night_id,auth.uid(),v_category_id,v_title,v_normalized,nullif(trim(p_omdb_id),''));
   update public.night_members set has_nominated=true
     where night_id=p_night_id and user_id=auth.uid();
 end;
 $$;
+create or replace function public.submit_nomination(p_night_id uuid,p_title text)
+returns void language sql security definer set search_path=''
+as $$ select public.submit_nomination(p_night_id,p_title,null::text); $$;
 
 create or replace function public.admin_draw_next(p_night_id uuid)
 returns uuid language plpgsql security definer set search_path='' 
@@ -286,7 +344,8 @@ begin
 end;
 $$;
 
-create or replace function public.replace_rejected_nomination(p_drawn_film_id uuid,p_title text)
+drop function if exists public.replace_rejected_nomination(uuid,text);
+create or replace function public.replace_rejected_nomination(p_drawn_film_id uuid,p_title text,p_omdb_id text)
 returns void language plpgsql security definer set search_path=''
 as $$
 declare
@@ -323,7 +382,8 @@ begin
   end if;
   v_normalized := lower(regexp_replace(v_title,'\s+',' ','g'));
   begin
-    update public.movie_nominations set title=v_title,normalized_title=v_normalized
+    update public.movie_nominations set title=v_title,normalized_title=v_normalized,
+      omdb_id=nullif(trim(p_omdb_id),'')
       where id=v_nomination_id;
   exception when unique_violation then
     raise exception 'Questo titolo è già stato nominato nella serata.';
@@ -334,6 +394,9 @@ begin
     rating_count=0,decided_at=null where id=p_drawn_film_id;
 end;
 $$;
+create or replace function public.replace_rejected_nomination(p_drawn_film_id uuid,p_title text)
+returns void language sql security definer set search_path=''
+as $$ select public.replace_rejected_nomination(p_drawn_film_id,p_title,null::text); $$;
 
 create or replace function public.get_my_seen_vote(p_drawn_film_id uuid)
 returns boolean language sql stable security definer set search_path='' 
@@ -418,8 +481,9 @@ begin
 end;
 $$;
 
-create or replace function public.get_revealed_movies(p_night_id uuid)
-returns table(drawn_film_id uuid,title text,category_name text,average_rating numeric,"position" integer,vote_count bigint)
+drop function if exists public.get_revealed_movies(uuid);
+create function public.get_revealed_movies(p_night_id uuid)
+returns table(drawn_film_id uuid,title text,category_name text,average_rating numeric,"position" integer,vote_count bigint,submitted_by text,poster_url text)
 language plpgsql stable security definer set search_path='' 
 as $$
 begin
@@ -431,13 +495,13 @@ begin
   end if;
   return query
     with scores as (
-      select d.id,d.title,c.name as category_name,
+      select d.id,d.nomination_id,d.title,c.name as category_name,
         round(avg(r.rating),2)::numeric as average_rating,count(r.user_id)::bigint as vote_count
       from public.drawn_films d
       join public.film_categories c on c.id=d.category_id
       join public.movie_ratings r on r.drawn_film_id=d.id
       where d.night_id=p_night_id and d.status='approved'
-      group by d.id,d.title,c.name
+      group by d.id,d.nomination_id,d.title,c.name
     ), ranked as (
       select s.*,row_number() over(order by s.average_rating desc,s.title asc)::integer as position
       from scores s
@@ -445,8 +509,13 @@ begin
       select n.revealed_count,(select count(*) from ranked)::integer as total
       from public.movie_nights n where n.id=p_night_id
     )
-    select r.id,r.title,r.category_name,r.average_rating,r.position,r.vote_count
-    from ranked r cross join reveal_state rs
+    select r.id,r.title,r.category_name,r.average_rating,r.position,r.vote_count,
+      p.username,m.poster_url
+    from ranked r
+    join public.movie_nominations n on n.id=r.nomination_id
+    join public.profiles p on p.id=n.user_id
+    left join public.drawn_film_metadata m on m.drawn_film_id=r.id
+    cross join reveal_state rs
     where r.position > rs.total-rs.revealed_count
     order by r.position desc;
 end;
@@ -513,6 +582,9 @@ alter table public.night_participants enable row level security;
 alter table public.night_members enable row level security;
 alter table public.movie_nominations enable row level security;
 alter table public.drawn_films enable row level security;
+alter table public.drawn_film_metadata enable row level security;
+alter table public.omdb_cache enable row level security;
+alter table public.omdb_api_call_log enable row level security;
 alter table public.seen_votes enable row level security;
 alter table public.movie_ratings enable row level security;
 
@@ -534,6 +606,12 @@ create policy own_nomination_read on public.movie_nominations
 drop policy if exists member_draws_read on public.drawn_films;
 create policy member_draws_read on public.drawn_films
   for select to authenticated using(public.is_night_member(night_id));
+drop policy if exists member_drawn_film_metadata_read on public.drawn_film_metadata;
+create policy member_drawn_film_metadata_read on public.drawn_film_metadata
+  for select to authenticated using(exists(
+    select 1 from public.drawn_films d
+    where d.id=drawn_film_id and public.is_night_member(d.night_id)
+  ));
 drop policy if exists own_seen_vote_read on public.seen_votes;
 create policy own_seen_vote_read on public.seen_votes
   for select to authenticated using(user_id=auth.uid());
@@ -542,6 +620,10 @@ create policy own_rating_read on public.movie_ratings
   for select to authenticated using(user_id=auth.uid());
 
 revoke all on public.admin_bootstrap from anon,authenticated;
+revoke all on public.omdb_cache,public.omdb_api_call_log from public,anon,authenticated;
+grant all on public.omdb_cache,public.omdb_api_call_log to service_role;
+revoke all on public.drawn_film_metadata from public,anon,authenticated;
+grant select on public.drawn_film_metadata to authenticated;
 revoke insert,update,delete on public.profiles,public.film_categories,public.movie_nights,
   public.night_participants,public.night_members,public.movie_nominations,
   public.drawn_films,public.seen_votes,public.movie_ratings from anon,authenticated;
@@ -556,10 +638,13 @@ revoke all on function public.is_current_user_admin() from public,anon,authentic
 revoke all on function public.is_night_member(uuid) from public,anon,authenticated;
 revoke all on function public.start_movie_night() from public,anon,authenticated;
 revoke all on function public.get_my_assignment(uuid) from public,anon,authenticated;
+revoke all on function public.submit_nomination(uuid,text,text) from public,anon,authenticated;
 revoke all on function public.submit_nomination(uuid,text) from public,anon,authenticated;
 revoke all on function public.admin_draw_next(uuid) from public,anon,authenticated;
 revoke all on function public.submit_seen_vote(uuid,boolean) from public,anon,authenticated;
+revoke all on function public.replace_rejected_nomination(uuid,text,text) from public,anon,authenticated;
 revoke all on function public.replace_rejected_nomination(uuid,text) from public,anon,authenticated;
+revoke all on function public.reserve_omdb_api_call(integer) from public,anon,authenticated;
 revoke all on function public.get_my_seen_vote(uuid) from public,anon,authenticated;
 revoke all on function public.get_my_rating(uuid) from public,anon,authenticated;
 revoke all on function public.cast_movie_rating(uuid,numeric) from public,anon,authenticated;
@@ -570,10 +655,13 @@ revoke all on function public.admin_reveal_next_rank(uuid) from public,anon,auth
 grant execute on function public.is_night_member(uuid) to authenticated;
 grant execute on function public.start_movie_night() to authenticated;
 grant execute on function public.get_my_assignment(uuid) to authenticated;
+grant execute on function public.submit_nomination(uuid,text,text) to authenticated;
 grant execute on function public.submit_nomination(uuid,text) to authenticated;
 grant execute on function public.admin_draw_next(uuid) to authenticated;
 grant execute on function public.submit_seen_vote(uuid,boolean) to authenticated;
+grant execute on function public.replace_rejected_nomination(uuid,text,text) to authenticated;
 grant execute on function public.replace_rejected_nomination(uuid,text) to authenticated;
+grant execute on function public.reserve_omdb_api_call(integer) to service_role;
 grant execute on function public.get_my_seen_vote(uuid) to authenticated;
 grant execute on function public.get_my_rating(uuid) to authenticated;
 grant execute on function public.cast_movie_rating(uuid,numeric) to authenticated;
