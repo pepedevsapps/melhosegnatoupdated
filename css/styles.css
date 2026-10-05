@@ -21,7 +21,7 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--bg); color: var(--text); }
+body { margin: 0; min-width: 320px; min-height: 100vh; min-height: 100dvh; background: var(--bg); color: var(--text); }
 button, input { font: inherit; }
 button { color: inherit; }
 a { color: inherit; text-decoration: none; }
@@ -36,7 +36,7 @@ a { color: inherit; text-decoration: none; }
 .eyebrow { color: var(--amber); font-size: 10px; letter-spacing: 2px; font-weight: 700; }
 
 /* Accesso */
-.auth-layout { min-height: 100vh; display: grid; grid-template-columns: minmax(380px, .95fr) minmax(430px, 1.05fr); }
+.auth-layout { min-height: 100vh; min-height: 100dvh; display: grid; grid-template-columns: minmax(380px, .95fr) minmax(430px, 1.05fr); }
 .auth-story { position: relative; display: flex; flex-direction: column; padding: 42px clamp(32px, 6vw, 90px); overflow: hidden; border-right: 1px solid var(--line); background: linear-gradient(160deg, rgba(42, 35, 51, .55), rgba(20, 18, 28, .2) 67%); }
 .story-copy { max-width: 480px; margin: auto 0; padding-bottom: 42px; }
 .story-copy h1 { margin: 18px 0 16px; font: 700 clamp(42px, 5.1vw, 72px)/1.04 "Manrope", sans-serif; letter-spacing: -3.5px; }
@@ -51,7 +51,7 @@ a { color: inherit; text-decoration: none; }
 .ticket-number { position: absolute; right: 28px; bottom: 23px; color: var(--muted); font-size: 9px; letter-spacing: 2px; }
 .story-footer { display: flex; align-items: center; gap: 9px; color: var(--faint); font-size: 12px; }
 .online-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 10px rgba(137, 214, 180, .5); }
-.auth-panel { display: grid; place-items: center; position: relative; padding: 48px 28px 78px; }
+.auth-panel { display: grid; place-items: center; position: relative; padding: 48px 28px max(78px, calc(54px + env(safe-area-inset-bottom, 0px))); }
 .auth-card { width: min(100%, 405px); }
 .auth-heading { margin-bottom: 27px; }
 .auth-heading h2 { margin: 10px 0 8px; font: 700 30px/1.2 "Manrope", sans-serif; letter-spacing: -1px; }
@@ -81,8 +81,8 @@ a { color: inherit; text-decoration: none; }
 .notice code { color: var(--amber); font-size: 11px; }
 
 /* Area autenticata */
-.app-layout { min-height: 100vh; }
-.topbar { display: flex; align-items: center; justify-content: space-between; height: 70px; padding: 0 clamp(20px, 5vw, 76px); border-bottom: 1px solid var(--line); background: rgba(17, 16, 24, .8); }
+.app-layout { min-height: 100vh; min-height: 100dvh; }
+.topbar { display: flex; align-items: center; justify-content: space-between; min-height: 70px; padding: env(safe-area-inset-top, 0px) clamp(20px, 5vw, 76px) 0; border-bottom: 1px solid var(--line); background: rgba(17, 16, 24, .8); }
 .topbar .brand { font-size: 18px; }
 .topbar .brand-mark { width: 33px; height: 33px; border-radius: 11px; font-size: 18px; }
 .topbar-actions { display: flex; align-items: center; gap: 12px; }
@@ -103,7 +103,7 @@ a { color: inherit; text-decoration: none; }
 .tab-lock { font-size: 10px; }
 .refresh-button { min-height: 34px; margin-left: auto; padding: 0 11px; font-size: 11px; }
 .tab-view { padding: 27px 0 8px; }
-.app-footer { display: flex; justify-content: center; align-items: center; gap: 7px; padding: 36px 0 25px; color: var(--faint); font-size: 11px; }
+.app-footer { display: flex; justify-content: center; align-items: center; gap: 7px; padding: 36px 0 calc(25px + env(safe-area-inset-bottom, 0px)); color: var(--faint); font-size: 11px; }
 
 .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 17px; }
 .section-heading h2 { margin: 0; font: 700 19px/1.2 "Manrope", sans-serif; letter-spacing: -.5px; }
@@ -204,19 +204,19 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 800px) {
   .auth-layout { grid-template-columns: minmax(0, 1fr); }
   .auth-story { display: none; }
-  .auth-panel { align-content: center; gap: 40px; min-height: 100vh; padding: 36px 24px 65px; }
-  .mobile-brand { display: inline-flex; margin-bottom: 36px; }
+  .auth-panel { align-content: center; gap: clamp(20px, 5vh, 40px); min-height: 100vh; min-height: 100dvh; padding: max(28px, calc(24px + env(safe-area-inset-top, 0px))) 24px max(32px, calc(28px + env(safe-area-inset-bottom, 0px))); }
+  .mobile-brand { display: inline-flex; margin-bottom: 0; }
   .content-grid { grid-template-columns: 1fr; }
   .side-column { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px; }
   .side-column > .card { align-self: start; }
 }
 @media (max-width: 560px) {
-  .topbar { height: 62px; padding: 0 17px; }
-  .topbar .brand { font-size: 16px; }
+  .topbar { min-height: calc(62px + env(safe-area-inset-top, 0px)); padding: env(safe-area-inset-top, 0px) max(12px, 4vw) 0; gap: 8px; }
+  .topbar .brand { gap: 7px; font-size: clamp(14px, 4vw, 16px); white-space: nowrap; }
   .topbar .brand-mark { width: 30px; height: 30px; font-size: 16px; }
-  .topbar-actions { gap: 8px; }
-  .user-pill { max-width: 95px; font-size: 10px; }
-  .topbar-actions .button { min-height: 34px; padding: 0 10px; font-size: 10px; }
+  .topbar-actions { min-width: 0; flex-shrink: 0; gap: 7px; }
+  .user-pill { max-width: clamp(48px, 23vw, 95px); font-size: 10px; }
+  .topbar-actions .button { min-height: 38px; padding: 0 9px; font-size: 10px; }
   .page-shell { width: calc(100% - 32px); }
   .welcome-row { min-height: 146px; padding: 27px 0 20px; }
   .welcome-row h1 { font-size: 28px; }
@@ -229,9 +229,9 @@ a { color: inherit; text-decoration: none; }
   .night-banner { align-items: flex-start; flex-direction: column; min-height: 125px; padding: 20px; }
   .night-banner h2 { font-size: 19px; }
   .night-banner::after { right: -65px; }
-  .stats-grid { gap: 7px; }
+  .stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
   .stat-card { padding: 13px 11px; }
-  .stat-label { font-size: 9px; }
+  .stat-label { overflow-wrap: anywhere; font-size: 9px; line-height: 1.3; }
   .stat-value { font-size: 19px; }
   .stat-value small { font-size: 9px; }
   .card-pad { padding: 16px; }
@@ -247,4 +247,9 @@ a { color: inherit; text-decoration: none; }
   .rank-title { font-size: 12px; }
   .rank-score { font-size: 15px; }
   .podium-label { display: block; margin: 3px 0 0; }
+}
+
+@media (max-width: 800px) and (max-height: 620px) {
+  .auth-panel { align-content: start; }
+  .auth-legal { position: static; margin-top: 20px; text-align: center; }
 }
