@@ -112,16 +112,36 @@
         <section id="participants-view" class="tab-view" hidden></section>
         <section id="leaderboard-view" class="tab-view" hidden></section>
         <section id="tutorial-view" class="tab-view" hidden>
-          <div class="section-heading"><div><span class="section-kicker">COME FUNZIONA</span><h2>Tutorial</h2><p>Una serata cinema in pochi passaggi.</p></div></div>
+          <div class="section-heading"><div><span class="section-kicker">COME FUNZIONA</span><h2>La serata, passo dopo passo</h2><p>Segui il draft, le nomination, i voti e la premiazione. Puoi riaprire la guida quando vuoi.</p></div></div>
           <div class="tutorial-grid">
-            <article class="card tutorial-card"><span>01</span><h3>Draft e nomination</h3><p>L’admin avvia il draft. I partecipanti scelgono una categoria libera nell’ordine sorteggiato, poi propongono un film adatto. Le nomination restano segrete.</p></article>
-            <article class="card tutorial-card"><span>02</span><h3>Verificate il film</h3><p>Dopo il sorteggio, tutti indicano se hanno già visto il film. Se supera la soglia del 55%, chi l’ha proposto può sostituirlo.</p></article>
-            <article class="card tutorial-card"><span>03</span><h3>Votate e finalizzate</h3><p>Quando il film è approvato, tutti possono valutarlo. I risultati provvisori restano visibili ai partecipanti; l’admin pubblica la classifica finale quando conclude la serata.</p></article>
+            <article class="card tutorial-card"><span>01</span><h3>Avvio e ordine</h3><p>L’organizzatore avvia la serata dalla pagina Partecipanti. L’ordine casuale dei partecipanti viene salvato.</p></article>
+            <article class="card tutorial-card"><span>02</span><h3>Scelta della categoria</h3><p>A turno, ognuno sceglie una categoria libera. La posizione determina un bonus da 0 a 0,5 punti.</p></article>
+            <article class="card tutorial-card"><span>03</span><h3>Nomination segrete</h3><p>Proponi un film adatto alla tua categoria. Gli altri non vedono il titolo finché l’organizzatore non lo estrae.</p></article>
+            <article class="card tutorial-card"><span>04</span><h3>Controllo visto/non visto</h3><p>Vota dalla Home. Se oltre il 55% ha già visto il film, chi l’ha proposto può sostituirlo senza una nuova estrazione.</p></article>
+            <article class="card tutorial-card"><span>05</span><h3>Valutazioni</h3><p>Quando un film è approvato, tutti possono valutarlo da Partecipanti. Il tuo voto si può modificare prima della chiusura.</p></article>
+            <article class="card tutorial-card"><span>06</span><h3>Classifica finale</h3><p>I punteggi provvisori combinano media e bonus. Solo l’organizzatore pubblica la classifica definitiva.</p></article>
           </div>
+          <button id="tutorial-start" class="button button-primary tutorial-start" type="button">Inizia la guida interattiva <span aria-hidden="true">→</span></button>
         </section>
         <footer class="app-footer"><span>🍿</span> Buona visione, sempre.</footer>
       </div>
     </main>
+
+    <dialog id="onboarding-dialog" class="onboarding-dialog" aria-labelledby="onboarding-title">
+      <div class="onboarding-topline"><span class="eyebrow">GUIDA INIZIALE</span><span id="onboarding-count" class="onboarding-count"></span></div>
+      <div class="onboarding-progress" aria-hidden="true"><span id="onboarding-progress-fill"></span></div>
+      <div class="onboarding-content">
+        <h2 id="onboarding-title"></h2>
+        <p id="onboarding-copy"></p>
+      </div>
+      <div class="onboarding-actions">
+        <button id="onboarding-skip" class="text-button onboarding-skip" type="button">Salta la guida</button>
+        <div class="onboarding-nav">
+          <button id="onboarding-back" class="button button-quiet" type="button">Indietro</button>
+          <button id="onboarding-next" class="button button-primary" type="button">Avanti <span aria-hidden="true">→</span></button>
+        </div>
+      </div>
+    </dialog>
 
     <script type="module" src="./js/app.js"></script>
   </body>

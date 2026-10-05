@@ -12,8 +12,10 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   username text not null unique check (username ~ '^[a-z0-9_]{3,20}$'),
   role text not null default 'player' check (role in ('player','admin')),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  onboarding_completed boolean not null default false
 );
+alter table public.profiles add column if not exists onboarding_completed boolean not null default false;
 create table if not exists public.film_categories (
   id integer generated always as identity primary key,
   name text not null unique
@@ -994,3 +996,16 @@ grant execute on function public.select_draft_category(uuid,integer) to authenti
 grant execute on function public.finalize_movie_night(uuid) to authenticated;
 grant execute on function public.get_provisional_leaderboard(uuid) to authenticated;
 grant execute on function public.get_revealed_movies(uuid) to authenticated;
+
+-- Users can only mark their own first-login walkthrough as completed.
+create or replace function public.complete_onboarding()
+returns void language plpgsql security definer set search_path=''
+as $$
+begin
+  if auth.uid() is null then raise exception 'Accedi per completare il tutorial.'; end if;
+  update public.profiles set onboarding_completed=true where id=auth.uid();
+  if not found then raise exception 'Profilo non trovato.'; end if;
+end;
+$$;
+revoke all on function public.complete_onboarding() from public,anon,authenticated;
+grant execute on function public.complete_onboarding() to authenticated;

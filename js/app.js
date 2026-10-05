@@ -29,6 +29,14 @@ const toastRegion = document.querySelector("#toast-region");
 const sideMenu = document.querySelector("#side-menu");
 const menuBackdrop = document.querySelector("#menu-backdrop");
 const menuToggle = document.querySelector("#menu-toggle");
+const onboardingDialog = document.querySelector("#onboarding-dialog");
+const onboardingTitle = document.querySelector("#onboarding-title");
+const onboardingCopy = document.querySelector("#onboarding-copy");
+const onboardingCount = document.querySelector("#onboarding-count");
+const onboardingProgress = document.querySelector("#onboarding-progress-fill");
+const onboardingBack = document.querySelector("#onboarding-back");
+const onboardingNext = document.querySelector("#onboarding-next");
+const onboardingSkip = document.querySelector("#onboarding-skip");
 
 let authMode = "login";
 let currentUser = null;
@@ -37,6 +45,9 @@ let dashboard = null;
 let activeTab = "night";
 let loading = false;
 let submitterPolicyNoticeShown = false;
+let onboardingSteps = [];
+let onboardingIndex = 0;
+let onboardingBusy = false;
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -59,6 +70,97 @@ function readableError(error) {
   if (/invalid login credentials/i.test(message)) return "Email o password non corretti.";
   if (/email not confirmed/i.test(message)) return "Conferma prima l'indirizzo email dal messaggio ricevuto.";
   return message;
+}
+
+function buildOnboardingSteps() {
+  const isAdmin = currentProfile?.role === "admin";
+  return [
+    {
+      title: "Benvenuto in Me l’ho segnato!",
+      copy: "Qui organizzate una serata cinema: scegliete categorie a turno, proponete film in segreto, controllate chi li ha già visti e infine votate. Questa guida ti accompagna in tutti i passaggi.",
+    },
+    {
+      title: "Orientati nell’app",
+      copy: "Apri il menu ☰ in alto a destra per tornare al film, aprire Partecipanti, rileggere il Tutorial, vedere la Classifica finale quando sarà pubblicata, aggiornare i dati o uscire. La Home mostra il film corrente e il voto visto/non visto.",
+    },
+    {
+      title: isAdmin ? "Organizza la serata" : "Entra nella serata",
+      copy: isAdmin
+        ? "Da Partecipanti, premi Avvia draft categorie quando gli account di tutti sono registrati. L’app sorteggia e salva l’ordine di scelta; anche l’organizzatore partecipa come giocatore."
+        : "L’organizzatore avvia la serata dalla pagina Partecipanti. Per essere incluso, il tuo account deve esistere prima dell’avvio; se ti registri dopo, potrai partecipare alla serata successiva.",
+    },
+    {
+      title: "Scegli la tua categoria",
+      copy: "La pagina Partecipanti mostra l’ordine salvato, il turno attuale, le categorie libere e il bonus di ogni posizione. Quando tocca a te, scegli una categoria non ancora presa: la scelta non si rimescola se ricarichi la pagina. Il bonus cresce linearmente da 0 fino a 0,5 punti.",
+    },
+    {
+      title: "Invia una nomination segreta",
+      copy: "Dopo aver scelto la categoria, vai su Partecipanti e cerca un film adatto. L’elenco suggerimenti aiuta a trovare il titolo; seleziona il risultato e invia la nomination. Gli altri non vedranno il titolo finché l’organizzatore non lo pescherà.",
+    },
+    {
+      title: isAdmin ? "Pesca i film dal pool" : "Attendi il sorteggio",
+      copy: isAdmin
+        ? "Quando tutti hanno inviato una nomination, usa i controlli admin in Partecipanti per pescare un film. Le estrazioni formano la cronologia della serata. Prima della pesca successiva, completate il controllo visto/non visto e le valutazioni richieste."
+        : "Quando tutte le nomination sono state inviate, l’organizzatore pesca i titoli uno alla volta. Ogni film estratto entra nella cronologia in Partecipanti e compare anche nella Home.",
+    },
+    {
+      title: "Vota se hai già visto il film",
+      copy: "Sotto il film in Home, scegli L’ho visto oppure Non l’ho visto. Il conteggio e la percentuale si aggiornano con i voti. Se più del 55% lo ha già visto, chi l’ha proposto può sostituire il titolo: non serve una nuova pesca.",
+    },
+    {
+      title: "Dai il tuo voto al film",
+      copy: "Quando il film viene approvato, assegnagli un voto da 1 a 5 popcorn, anche a mezzi punti. Trovi la scheda e l’avanzamento delle valutazioni in Partecipanti. Puoi modificare il tuo voto finché l’organizzatore non finalizza la serata.",
+    },
+    {
+      title: isAdmin ? "Pubblica la classifica" : "Segui la classifica",
+      copy: isAdmin
+        ? "In Partecipanti trovi risultati provvisori e avanzamento dei voti. Quando il pool è stato pescato e i controlli sono conclusi, premi Concludi e pubblica classifica. La classifica finale si apre dal menu."
+        : "In Partecipanti puoi seguire i risultati provvisori e l’avanzamento dei voti. La classifica diventa definitiva solo quando l’organizzatore la pubblica; poi la trovi nel menu, con il vincitore in evidenza.",
+    },
+    {
+      title: "Come si calcola il punteggio",
+      copy: "Per ogni film si fa la media dei voti ricevuti e si aggiunge una sola volta il bonus della persona che ha scelto la categoria, fino a un massimo di 0,5. Il risultato non supera 5; i voti mancanti non valgono zero. Buona visione!",
+    },
+  ];
+}
+
+function renderOnboardingStep() {
+  if (!onboardingSteps.length) return;
+  const step = onboardingSteps[onboardingIndex];
+  onboardingTitle.textContent = step.title;
+  onboardingCopy.textContent = step.copy;
+  onboardingCount.textContent = (onboardingIndex + 1) + " / " + onboardingSteps.length;
+  onboardingProgress.style.width = (((onboardingIndex + 1) / onboardingSteps.length) * 100) + "%";
+  onboardingBack.disabled = onboardingIndex === 0 || onboardingBusy;
+  onboardingNext.disabled = onboardingBusy;
+  onboardingSkip.disabled = onboardingBusy;
+  onboardingNext.innerHTML = onboardingIndex === onboardingSteps.length - 1
+    ? 'Termina <span aria-hidden="true">✓</span>'
+    : 'Avanti <span aria-hidden="true">→</span>';
+}
+
+function openOnboardingTour() {
+  onboardingSteps = buildOnboardingSteps();
+  onboardingIndex = 0;
+  onboardingBusy = false;
+  renderOnboardingStep();
+  if (!onboardingDialog.open) onboardingDialog.showModal();
+}
+
+async function completeOnboardingTour() {
+  if (onboardingBusy) return;
+  onboardingBusy = true;
+  renderOnboardingStep();
+  try {
+    const { error } = await supabase.rpc("complete_onboarding");
+    if (error) throw error;
+    currentProfile = { ...currentProfile, onboarding_completed: true };
+    onboardingDialog.close();
+  } catch (error) {
+    onboardingBusy = false;
+    renderOnboardingStep();
+    toast(readableError(error), "error");
+  }
 }
 
 function setAuthMode(mode) {
@@ -95,12 +197,13 @@ async function enterApp(user) {
   nightView.innerHTML = '<div class="loading"><span class="spinner"></span> Apro la serata…</div>';
   try {
     const { data: profile, error } = await supabase
-      .from("profiles").select("id,username,role").eq("id", user.id).maybeSingle();
+      .from("profiles").select("id,username,role,onboarding_completed").eq("id", user.id).maybeSingle();
     if (error) throw error;
     if (!profile) throw new Error("Profilo non trovato. Prova a uscire e accedere di nuovo.");
     currentProfile = profile;
     document.querySelector("#menu-username").textContent = profile.username;
     await refreshDashboard();
+    if (!profile.onboarding_completed) openOnboardingTour();
   } catch (error) {
     toast(readableError(error), "error");
     showAuth();
@@ -865,6 +968,23 @@ document.querySelector("#refresh-button").addEventListener("click", () => {
 menuToggle.addEventListener("click", () => setMenuOpen(menuToggle.getAttribute("aria-expanded") !== "true"));
 menuBackdrop.addEventListener("click", () => setMenuOpen(false));
 document.querySelectorAll(".menu-link[data-page]").forEach((item) => item.addEventListener("click", () => setActivePage(item.dataset.page)));
+document.querySelector("#tutorial-start").addEventListener("click", openOnboardingTour);
+onboardingBack.addEventListener("click", () => {
+  if (onboardingIndex > 0 && !onboardingBusy) {
+    onboardingIndex -= 1;
+    renderOnboardingStep();
+  }
+});
+onboardingNext.addEventListener("click", () => {
+  if (onboardingIndex === onboardingSteps.length - 1) {
+    completeOnboardingTour();
+  } else if (!onboardingBusy) {
+    onboardingIndex += 1;
+    renderOnboardingStep();
+  }
+});
+onboardingSkip.addEventListener("click", completeOnboardingTour);
+onboardingDialog.addEventListener("cancel", (event) => event.preventDefault());
 document.querySelector("#home-link").addEventListener("click", (event) => {
   event.preventDefault();
   setActivePage("night");
