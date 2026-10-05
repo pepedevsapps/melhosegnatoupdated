@@ -281,16 +281,14 @@ function renderMovieMetadata(metadata) {
     + '</div></div>';
 }
 
-function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNominationId, metadata, submittedBy) {
-  const category = categories[draw.category_id] || "Cinema";
-  let stateHtml = "";
+function renderSeenVote(draw, mySeen = {}) {
   if (draw.status === "checking") {
     const ownVote = mySeen[draw.id];
     const votesCast = Number(draw.vote_count || 0);
     const seenCount = Number(draw.seen_count || 0);
     const seenPercent = votesCast ? (seenCount / votesCast) * 100 : 0;
     const overThreshold = votesCast > 0 && seenCount * 100 > votesCast * 55;
-    stateHtml = '<div class="vote-prompt"><strong>Lo hai già visto?</strong><p>Il film viene sostituito se più del 55% lo ha già visto quando tutti hanno votato.</p>'
+    return '<div class="vote-prompt"><strong>Lo hai già visto?</strong><p>Il film viene sostituito se più del 55% lo ha già visto quando tutti hanno votato.</p>'
       + '<p class="seen-summary">' + votesCast + '/' + draw.member_count + ' persone hanno votato · ' + seenPercent.toFixed(1) + '% dei voti ricevuti dice “già visto”</p>'
       + '<div class="seen-progress' + (overThreshold ? ' over-threshold' : '') + '" role="progressbar" aria-label="Percentuale dei voti che hanno già visto il film" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + seenPercent.toFixed(1) + '"><span style="width:' + Math.min(100, seenPercent).toFixed(1) + '%"></span></div>'
       + (ownVote === undefined ? "" : '<p class="film-status waiting">La tua risposta è registrata. Puoi cambiarla fino alla chiusura del voto.</p>')
@@ -298,10 +296,23 @@ function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNom
       + '" data-action="seen-vote" data-id="' + draw.id + '" data-value="true">L’ho visto</button><button class="button '
       + (ownVote === false ? "button-secondary" : "button-quiet") + '" data-action="seen-vote" data-id="' + draw.id
       + '" data-value="false">Non l’ho visto</button></div></div>';
-  } else if (draw.status === "rejected") {
-    const finalSeenPercent = draw.member_count ? ((Number(draw.seen_count || 0) / draw.member_count) * 100).toFixed(1) : "0.0";
-    stateHtml = '<div class="film-status warning">' + finalSeenPercent + '% (' + draw.seen_count + '/' + draw.member_count
+  }
+  if (draw.status === "rejected") {
+    const percent = draw.member_count ? ((Number(draw.seen_count || 0) / draw.member_count) * 100).toFixed(1) : "0.0";
+    return '<div class="film-status warning">' + percent + '% (' + draw.seen_count + '/' + draw.member_count
       + ') lo aveva già visto. Soglia superata: chi ha proposto il film può sostituirlo. La stessa estrazione ripartirà con il nuovo titolo.</div>';
+  }
+  return '<div class="film-status success">Film approvato · ' + draw.seen_count + "/" + draw.member_count
+    + ' persone lo avevano già visto.</div>';
+}
+
+function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNominationId, metadata, submittedBy, showSeenStatus = true) {
+  const category = categories[draw.category_id] || "Cinema";
+  let stateHtml = "";
+  if (draw.status === "checking") {
+    stateHtml = showSeenStatus ? renderSeenVote(draw, mySeen) : "";
+  } else if (draw.status === "rejected") {
+    stateHtml = showSeenStatus ? renderSeenVote(draw, mySeen) : "";
     if (draw.nomination_id === myNominationId) {
       stateHtml += '<form id="replace-nomination-form" class="nomination-form" data-drawn-film-id="' + draw.id + '">'
         + '<label for="replacement-title-' + draw.id + '">Inserisci un altro film per questa estrazione</label>'
@@ -314,8 +325,7 @@ function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNom
     const rating = myRatings[draw.id];
     const canEdit = phase === "nominations";
     const options = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
-    stateHtml = '<div class="film-status success">Film approvato · ' + draw.seen_count + "/" + draw.member_count
-      + ' persone lo avevano già visto.</div><div class="vote-prompt"><strong>'
+    stateHtml = (showSeenStatus ? renderSeenVote(draw, mySeen) : "") + '<div class="vote-prompt"><strong>'
       + (rating === undefined ? "Quanto ti è piaciuto?" : "Il tuo voto: " + ratingLabel(rating) + " popcorn")
       + "</strong><p>" + draw.rating_count + "/" + draw.member_count + " voti ricevuti"
       + (canEdit && rating !== undefined ? " · puoi modificare il tuo voto" : "") + "</p>"
@@ -357,7 +367,8 @@ function renderNight() {
   nightView.innerHTML = '<article class="home-movie-card"><div class="home-movie-art">' + poster + '</div><div class="home-movie-copy">'
     + '<span class="home-movie-category">' + escapeHtml(category) + '</span><h2>' + escapeHtml(draw.title) + '</h2>'
     + '<p class="home-movie-submitter">Scelto da <strong>' + escapeHtml(submitter) + '</strong></p>'
-    + '<p class="home-movie-description">' + description + '</p></div></article>';
+    + '<p class="home-movie-description">' + description + '</p></div></article>'
+    + '<section class="home-seen-section" aria-label="Voto visto o non visto">' + renderSeenVote(draw, dashboard.mySeen) + '</section>';
 }
 
 function renderParticipants() {
@@ -392,7 +403,7 @@ function renderParticipants() {
     : '<form id="nomination-form" class="nomination-form"><label for="movie-title">Scegli il tuo film</label>' + renderAutocompleteField("movie-title", "Titolo del film…") + '<button class="button button-primary" type="submit">Invia nomination <span aria-hidden="true">→</span></button></form>';
   const drawSection = draws.length
     ? '<div class="divider"></div><div class="section-heading"><div><span class="section-kicker">POOL ESTRATTO</span><h2>Film della serata</h2><p>Vengono mostrati solo dopo il sorteggio.</p></div></div><div class="film-list">'
-      + draws.map((draw, i) => renderDrawCard(draw, i, categories, mySeen, myRatings, night.phase, myNomination?.id, movieMetadata[draw.id], drawSubmitters[draw.nomination_id])).join("") + "</div>"
+      + draws.map((draw, i) => renderDrawCard(draw, i, categories, mySeen, myRatings, night.phase, myNomination?.id, movieMetadata[draw.id], drawSubmitters[draw.nomination_id], draw.id !== draws[draws.length - 1]?.id)).join("") + "</div>"
     : '<div class="divider"></div><p class="small-muted">I titoli restano segreti fino al sorteggio. Per ora puoi vedere solo chi ha completato la nomination.</p>';
   participantsView.innerHTML = '<div class="participants-heading"><div><span class="eyebrow">LA SERATA</span><h2>Partecipanti</h2></div><span class="status-chip '
     + phaseClass + '">' + escapeHtml(phaseLabel) + '</span></div><div class="night-banner"><div><span class="eyebrow">SERATA CINEMA · '
