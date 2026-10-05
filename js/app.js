@@ -65,6 +65,9 @@ function toast(message, kind = "") {
 
 function readableError(error) {
   const message = error?.message || "Si è verificato un errore. Riprova.";
+  if (/user already registered|user_already_exists/i.test(message)) {
+    return "Esiste già un account con questa email. Accedi oppure usa il recupero password.";
+  }
   if (/database error saving new user/i.test(message)) {
     return "Il database non ha completato la registrazione. Verifica che lo username abbia 3-50 lettere, numeri o underscore e che non sia già in uso. Se l’errore continua con uno username valido, l’amministratore deve controllare i log Auth di Supabase.";
   }
@@ -940,6 +943,11 @@ authForm.addEventListener("submit", async (event) => {
         email, password, options: { data: { username } },
       });
       if (error) throw error;
+      if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        toast("Esiste già un account con questa email. Accedi oppure usa il recupero password.", "error");
+        setAuthMode("login");
+        return;
+      }
       if (data.session) {
         await enterApp(data.user);
       } else {
