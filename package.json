@@ -1,8 +1,8 @@
 {
-  "name": "popcorn-club",
+  "name": "me-lho-segnato",
   "version": "1.0.0",
   "private": true,
-  "description": "Popcorn Club static web app and Supabase project tooling",
+  "description": "Me l'ho segnato static web app and Supabase project tooling",
   "devDependencies": {
     "supabase": "^2.119.0"
   }

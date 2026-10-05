@@ -1,4 +1,4 @@
-# Popcorn Club — Serata cinema
+# Me l'ho segnato — Serata cinema
 
 Web app responsive, pubblicabile su GitHub Pages. Usa Supabase Auth e Postgres per gli account e i dati della serata.
 
