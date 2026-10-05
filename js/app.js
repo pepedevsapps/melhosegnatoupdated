@@ -328,7 +328,7 @@ async function refreshDashboard(quiet = false) {
 }
 
 function renderEmpty(title, description, action = "") {
-  return '<div class="empty-state"><div><div class="empty-icon">✦</div><h2>'
+  return '<div class="empty-state"><div><h2>'
     + escapeHtml(title) + "</h2><p>" + escapeHtml(description) + "</p>" + action + "</div></div>";
 }
 
