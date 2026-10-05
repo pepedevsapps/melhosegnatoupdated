@@ -65,6 +65,12 @@ function toast(message, kind = "") {
 
 function readableError(error) {
   const message = error?.message || "Si è verificato un errore. Riprova.";
+  if (/database error saving new user/i.test(message)) {
+    return "Il database non ha completato la registrazione. Verifica che lo username abbia 3-50 lettere, numeri o underscore e che non sia già in uso. Se l’errore continua con uno username valido, l’amministratore deve controllare i log Auth di Supabase.";
+  }
+  if (/email rate limit|rate limit.*email|email.*rate.?limit/i.test(message)) {
+    return "Supabase ha raggiunto il limite di invio delle email di registrazione. Attendi prima di riprovare; per aumentare il limite, l’amministratore deve configurare un server SMTP personalizzato nelle impostazioni Auth di Supabase.";
+  }
   if (/duplicate key|unique constraint/i.test(message)) return "Questo film è già stato proposto nella serata.";
   if (/username riservato/i.test(message)) return "Questo username è riservato all'admin.";
   if (/invalid login credentials/i.test(message)) return "Email o password non corretti.";
