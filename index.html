@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#111018" />
+    <meta name="description" content="Organizza una serata cinema, nascondi le nomination e lascia che sia il sorteggio a scegliere il film." />
+    <title>Popcorn Club — Serata cinema</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./css/styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <div id="toast-region" class="toast-region" aria-live="polite"></div>
+
+    <main id="auth-screen" class="auth-layout">
+      <section class="auth-story">
+        <a class="brand" href="./" aria-label="Popcorn Club home">
+          <span class="brand-mark" aria-hidden="true">🍿</span>
+          <span>popcorn<span class="brand-light">club</span></span>
+        </a>
+        <div class="story-copy">
+          <span class="eyebrow">SERATA CINEMA, SENZA SPOILER</span>
+          <h1>Il prossimo film<br />lo decide il caso.</h1>
+          <p>Una categoria a testa, nomination segrete e un sorteggio condiviso. Preparate i popcorn.</p>
+        </div>
+        <div class="ticket-art" aria-hidden="true">
+          <div class="ticket-stars">✦ &nbsp; ✦ &nbsp; ✦</div>
+          <div class="ticket-reel">▶</div>
+          <div class="ticket-caption">UNA SERATA<br />DA RICORDARE</div>
+          <div class="ticket-number">N. 01</div>
+        </div>
+        <div class="story-footer"><span class="online-dot"></span> Il cinema è più bello insieme</div>
+      </section>
+
+      <section class="auth-panel">
+        <div class="mobile-brand brand">
+          <span class="brand-mark" aria-hidden="true">🍿</span>
+          <span>popcorn<span class="brand-light">club</span></span>
+        </div>
+        <div class="auth-card">
+          <div class="auth-heading">
+            <span class="eyebrow" id="auth-eyebrow">BENVENUTO NEL CLUB</span>
+            <h2 id="auth-title">Accedi alla serata</h2>
+            <p id="auth-subtitle">Entra con l'email e la password del tuo account.</p>
+          </div>
+          <div id="config-notice" class="notice notice-warn" hidden>
+            <strong>Collega il tuo progetto Supabase</strong>
+            <span>Apri <code>js/supabase-config.js</code> e inserisci Project URL e anon key prima di pubblicare.</span>
+          </div>
+          <form id="auth-form" class="form-stack">
+            <label id="username-field" class="field" hidden>
+              <span>Username</span>
+              <input id="username-input" name="username" autocomplete="username" minlength="3" maxlength="20" placeholder="es. giulia_rossi" />
+            </label>
+            <label class="field">
+              <span>Email</span>
+              <input id="email-input" name="email" type="email" autocomplete="email" required placeholder="nome@email.com" />
+            </label>
+            <label class="field">
+              <span>Password</span>
+              <input id="password-input" name="password" type="password" autocomplete="current-password" minlength="8" required placeholder="Almeno 8 caratteri" />
+            </label>
+            <button id="auth-submit" class="button button-primary button-wide" type="submit">Accedi <span aria-hidden="true">→</span></button>
+          </form>
+          <p class="auth-switch"><span id="auth-switch-copy">Non hai ancora un account?</span> <button id="auth-switch" class="text-button" type="button">Registrati</button></p>
+          <p class="auth-footnote">Con la registrazione, il tuo username sarà visibile agli altri partecipanti.</p>
+        </div>
+        <p class="auth-legal">Popcorn Club · Una piccola app per grandi serate.</p>
+      </section>
+    </main>
+
+    <main id="app-screen" class="app-layout" hidden>
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Popcorn Club home">
+          <span class="brand-mark" aria-hidden="true">🍿</span>
+          <span>popcorn<span class="brand-light">club</span></span>
+        </a>
+        <div class="topbar-actions">
+          <span id="topbar-user" class="user-pill"></span>
+          <button id="sign-out" class="button button-quiet" type="button">Esci</button>
+        </div>
+      </header>
+
+      <div class="page-shell">
+        <section class="welcome-row">
+          <div>
+            <span class="eyebrow">IL TUO CLUB DEL CINEMA</span>
+            <h1 id="welcome-title">Ciao, cinefilo <span>✦</span></h1>
+            <p>Le nomination sono segrete. Il divertimento no.</p>
+          </div>
+          <div class="welcome-ornament" aria-hidden="true">✳</div>
+        </section>
+
+        <nav class="tabs" aria-label="Sezioni">
+          <button class="tab active" data-tab="night" type="button"><span aria-hidden="true">◉</span> La serata</button>
+          <button class="tab" data-tab="leaderboard" type="button" id="leaderboard-tab" disabled><span aria-hidden="true">♛</span> Classifica <span id="leaderboard-lock" class="tab-lock">🔒</span></button>
+          <button id="refresh-button" class="button button-quiet refresh-button" type="button"><span aria-hidden="true">↻</span> Aggiorna</button>
+        </nav>
+
+        <section id="night-view" class="tab-view"></section>
+        <section id="leaderboard-view" class="tab-view" hidden></section>
+        <footer class="app-footer"><span>🍿</span> Buona visione, sempre.</footer>
+      </div>
+    </main>
+
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>

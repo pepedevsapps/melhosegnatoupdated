@@ -1,0 +1,9 @@
+{
+  "name": "popcorn-club",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Popcorn Club static web app and Supabase project tooling",
+  "devDependencies": {
+    "supabase": "^2.119.0"
+  }
+}
