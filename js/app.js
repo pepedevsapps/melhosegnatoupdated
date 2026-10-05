@@ -482,18 +482,26 @@ document.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = event.target.querySelector('button[type="submit"]');
   const title = new FormData(event.target).get("title").toString().trim();
+  const originalButtonLabel = button.innerHTML;
   button.disabled = true;
+  button.textContent = "Invio…";
+  let submitted = false;
   try {
     const { error } = await supabase.rpc("submit_nomination", {
       p_night_id: dashboard.night.id,
       p_title: title,
     });
     if (error) throw error;
+    submitted = true;
+    button.textContent = "Salvata ✓";
     toast("Nomination salvata: il titolo resta segreto finché non viene estratto.", "success");
     await refreshDashboard();
   } catch (error) {
     toast(readableError(error), "error");
-    button.disabled = false;
+    if (!submitted) {
+      button.disabled = false;
+      button.innerHTML = originalButtonLabel;
+    }
   }
 });
 
