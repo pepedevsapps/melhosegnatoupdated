@@ -603,6 +603,13 @@ create policy members_read_authenticated on public.night_members
 drop policy if exists own_nomination_read on public.movie_nominations;
 create policy own_nomination_read on public.movie_nominations
   for select to authenticated using(user_id=auth.uid());
+-- After a nomination is drawn, members can see who submitted that revealed film.
+drop policy if exists drawn_nomination_submitter_read on public.movie_nominations;
+create policy drawn_nomination_submitter_read on public.movie_nominations
+  for select to authenticated using(exists(
+    select 1 from public.drawn_films d
+    where d.nomination_id=movie_nominations.id and public.is_night_member(d.night_id)
+  ));
 drop policy if exists member_draws_read on public.drawn_films;
 create policy member_draws_read on public.drawn_films
   for select to authenticated using(public.is_night_member(night_id));

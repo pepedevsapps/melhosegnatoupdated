@@ -75,34 +75,51 @@
 
     <main id="app-screen" class="app-layout" hidden>
       <header class="topbar">
-        <a class="brand" href="./" aria-label="Me l'ho segnato home">
+        <a class="brand" href="#film" id="home-link" aria-label="Il film da guardare">
           <span class="brand-mark" aria-hidden="true">🍿</span>
           <span>Me l'ho <span class="brand-light">segnato</span></span>
         </a>
         <div class="topbar-actions">
-          <span id="topbar-user" class="user-pill"></span>
-          <button id="sign-out" class="button button-quiet" type="button">Esci</button>
+          <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Apri il menu" aria-expanded="false" aria-controls="side-menu">
+            <span></span><span></span><span></span>
+          </button>
         </div>
       </header>
+
+      <div id="menu-backdrop" class="menu-backdrop" hidden></div>
+      <aside id="side-menu" class="side-menu" aria-label="Menu principale" aria-hidden="true" hidden>
+        <div class="side-menu-header"><span class="eyebrow">IL TUO ACCOUNT</span><strong id="menu-username"></strong></div>
+        <nav class="side-menu-nav" aria-label="Pagine">
+          <button class="menu-link" type="button" data-page="night"><span aria-hidden="true">◉</span> Il film da guardare</button>
+          <button id="refresh-button" class="menu-link" type="button"><span aria-hidden="true">↻</span> Aggiorna</button>
+          <button class="menu-link" type="button" data-page="tutorial"><span aria-hidden="true">ⓘ</span> Tutorial</button>
+          <button id="leaderboard-tab" class="menu-link" type="button" data-page="leaderboard" disabled><span aria-hidden="true">♛</span> Classifica <span id="leaderboard-lock" class="menu-lock">🔒</span></button>
+          <button class="menu-link" type="button" data-page="participants"><span aria-hidden="true">♙</span> Partecipanti</button>
+        </nav>
+        <button id="sign-out" class="menu-link menu-logout" type="button"><span aria-hidden="true">↗</span> Logout</button>
+      </aside>
 
       <div class="page-shell">
         <section class="welcome-row">
           <div>
             <span class="eyebrow">IL TUO CLUB DEL CINEMA</span>
-            <h1 id="welcome-title">Ciao, cinefilo <span>✦</span></h1>
-            <p>Le nomination sono segrete. Il divertimento no.</p>
+            <h1>Il film da guardare</h1>
+            <p>La serata ha scelto il suo prossimo film.</p>
           </div>
           <div class="welcome-ornament" aria-hidden="true">✳</div>
         </section>
 
-        <nav class="tabs" aria-label="Sezioni">
-          <button class="tab active" data-tab="night" type="button"><span aria-hidden="true">◉</span> La serata</button>
-          <button class="tab" data-tab="leaderboard" type="button" id="leaderboard-tab" disabled><span aria-hidden="true">♛</span> Classifica <span id="leaderboard-lock" class="tab-lock">🔒</span></button>
-          <button id="refresh-button" class="button button-quiet refresh-button" type="button"><span aria-hidden="true">↻</span> Aggiorna</button>
-        </nav>
-
         <section id="night-view" class="tab-view"></section>
+        <section id="participants-view" class="tab-view" hidden></section>
         <section id="leaderboard-view" class="tab-view" hidden></section>
+        <section id="tutorial-view" class="tab-view" hidden>
+          <div class="section-heading"><div><span class="section-kicker">COME FUNZIONA</span><h2>Tutorial</h2><p>Una serata cinema in pochi passaggi.</p></div></div>
+          <div class="tutorial-grid">
+            <article class="card tutorial-card"><span>01</span><h3>Scegli una categoria</h3><p>Ogni partecipante riceve una categoria e propone un film adatto. Le nomination restano segrete.</p></article>
+            <article class="card tutorial-card"><span>02</span><h3>Verificate il film</h3><p>Dopo il sorteggio, tutti indicano se hanno già visto il film. Se supera la soglia del 55%, chi l’ha proposto può sostituirlo.</p></article>
+            <article class="card tutorial-card"><span>03</span><h3>Votate e scoprite la classifica</h3><p>Quando il film è approvato, tutti lo valutano. A fine serata l’admin rivela la classifica dal fondo fino al vincitore.</p></article>
+          </div>
+        </section>
         <footer class="app-footer"><span>🍿</span> Buona visione, sempre.</footer>
       </div>
     </main>

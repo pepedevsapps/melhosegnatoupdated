@@ -19,10 +19,15 @@ const authEyebrow = document.querySelector("#auth-eyebrow");
 const usernameField = document.querySelector("#username-field");
 const configNotice = document.querySelector("#config-notice");
 const nightView = document.querySelector("#night-view");
+const participantsView = document.querySelector("#participants-view");
 const leaderboardView = document.querySelector("#leaderboard-view");
+const tutorialView = document.querySelector("#tutorial-view");
 const leaderboardTab = document.querySelector("#leaderboard-tab");
 const leaderboardLock = document.querySelector("#leaderboard-lock");
 const toastRegion = document.querySelector("#toast-region");
+const sideMenu = document.querySelector("#side-menu");
+const menuBackdrop = document.querySelector("#menu-backdrop");
+const menuToggle = document.querySelector("#menu-toggle");
 
 let authMode = "login";
 let currentUser = null;
@@ -30,6 +35,7 @@ let currentProfile = null;
 let dashboard = null;
 let activeTab = "night";
 let loading = false;
+let submitterPolicyNoticeShown = false;
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -92,8 +98,7 @@ async function enterApp(user) {
     if (error) throw error;
     if (!profile) throw new Error("Profilo non trovato. Prova a uscire e accedere di nuovo.");
     currentProfile = profile;
-    document.querySelector("#topbar-user").textContent = profile.username;
-    document.querySelector("#welcome-title").innerHTML = "Ciao, " + escapeHtml(profile.username) + ' <span>✦</span>';
+    document.querySelector("#menu-username").textContent = profile.username;
     await refreshDashboard();
   } catch (error) {
     toast(readableError(error), "error");
@@ -110,7 +115,7 @@ async function refreshDashboard(quiet = false) {
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (nightError) throw nightError;
     if (!night) {
-      dashboard = { night: null, isMember: false, members: [], draws: [], categories: {},
+      dashboard = { night: null, isMember: false, members: [], draws: [], drawSubmitters: {}, categories: {},
         myNomination: null, mySeen: {}, myRatings: {}, assignment: null, leaderboard: null, revealed: [] };
       renderAll();
       return;
@@ -140,6 +145,22 @@ async function refreshDashboard(quiet = false) {
       .eq("night_id", night.id).order("drawn_at", { ascending: true });
     if (drawError) throw drawError;
     const draws = drawRows || [];
+    let drawSubmitters = {};
+    const nominationIds = draws.map((draw) => draw.nomination_id).filter(Boolean);
+    if (isMember && nominationIds.length) {
+      const { data: submitterRows, error: submitterError } = await supabase
+        .from("movie_nominations").select("id,user_id").in("id", nominationIds);
+      if (submitterError) {
+        if (!quiet && !submitterPolicyNoticeShown) {
+          toast("Per mostrare chi ha scelto il film, applica la nuova policy di lettura presente in supabase/schema.sql.", "error");
+          submitterPolicyNoticeShown = true;
+        }
+      } else {
+        drawSubmitters = Object.fromEntries((submitterRows || []).map((row) => [
+          row.id, profileMap[row.user_id]?.username || "Partecipante",
+        ]));
+      }
+    }
     let movieMetadata = {};
     let myNomination = null;
     let assignment = null;
@@ -181,7 +202,7 @@ async function refreshDashboard(quiet = false) {
       }
     }
 
-    dashboard = { night, isMember, members, profileMap, draws, categories, movieMetadata, myNomination,
+    dashboard = { night, isMember, members, profileMap, draws, drawSubmitters, categories, movieMetadata, myNomination,
       mySeen, myRatings, assignment, leaderboard, revealed };
     renderAll();
   } catch (error) {
@@ -260,7 +281,7 @@ function renderMovieMetadata(metadata) {
     + '</div></div>';
 }
 
-function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNominationId, metadata) {
+function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNominationId, metadata, submittedBy) {
   const category = categories[draw.category_id] || "Cinema";
   let stateHtml = "";
   if (draw.status === "checking") {
@@ -304,13 +325,44 @@ function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNom
         + ratingLabel(value) + "</button>").join("") + "</div>" : "") + "</div>";
   }
   return '<article class="film-card"><div class="film-card-content"><h3 class="film-title">' + escapeHtml(draw.title) + '</h3><div class="film-meta">'
-    + escapeHtml(category) + " · estratto " + (index + 1) + "</div>" + renderMovieMetadata(metadata) + stateHtml
+    + escapeHtml(category) + " · estratto " + (index + 1) + (submittedBy ? " · proposto da " + escapeHtml(submittedBy) : "")
+    + "</div>" + renderMovieMetadata(metadata) + stateHtml
     + '</div><span class="film-num">' + String(index + 1).padStart(2, "0") + "</span></article>";
 }
 
 function renderNight() {
   if (!dashboard?.night) {
-    nightView.innerHTML = currentProfile?.role === "admin"
+    nightView.innerHTML = renderEmpty("Il film sarà annunciato qui", "Quando l’admin avrà avviato la serata e sorteggiato un titolo, qui troverai il film da guardare.");
+    return;
+  }
+  if (!dashboard.isMember) {
+    nightView.innerHTML = renderEmpty("Il film sarà annunciato qui", "Questa serata è stata aperta prima della tua registrazione. Potrai partecipare alla prossima.");
+    return;
+  }
+  const draws = dashboard.draws || [];
+  const draw = draws[draws.length - 1];
+  if (!draw) {
+    nightView.innerHTML = renderEmpty("Il film sarà annunciato qui", "Le nomination sono ancora segrete. Il film comparirà dopo il sorteggio.");
+    return;
+  }
+  const category = dashboard.categories?.[draw.category_id] || "Cinema";
+  const metadata = dashboard.movieMetadata?.[draw.id];
+  const poster = metadata?.poster_url && /^https:\/\//i.test(metadata.poster_url)
+    ? '<img class="home-movie-poster" src="' + escapeHtml(metadata.poster_url) + '" alt="Locandina di ' + escapeHtml(draw.title) + '" loading="lazy">'
+    : '<div class="home-movie-poster poster-placeholder" aria-hidden="true">🎞</div>';
+  const description = metadata?.found && metadata.plot
+    ? escapeHtml(metadata.plot)
+    : "La descrizione del film non è disponibile al momento.";
+  const submitter = dashboard.drawSubmitters?.[draw.nomination_id] || "Partecipante";
+  nightView.innerHTML = '<article class="home-movie-card"><div class="home-movie-art">' + poster + '</div><div class="home-movie-copy">'
+    + '<span class="home-movie-category">' + escapeHtml(category) + '</span><h2>' + escapeHtml(draw.title) + '</h2>'
+    + '<p class="home-movie-submitter">Scelto da <strong>' + escapeHtml(submitter) + '</strong></p>'
+    + '<p class="home-movie-description">' + description + '</p></div></article>';
+}
+
+function renderParticipants() {
+  if (!dashboard?.night) {
+    participantsView.innerHTML = currentProfile?.role === "admin"
       ? '<div class="section-heading"><div><span class="section-kicker">PRONTI A COMINCIARE?</span><h2>La prossima serata inizia qui</h2><p>Registra gli amici, poi assegna a ciascuno una categoria casuale.</p></div></div>'
         + renderEmpty("Nessuna serata attiva", "Quando avvii una serata, tutti gli account registrati ricevono una categoria.")
         + '<div class="admin-control">' + renderAdminPanel(null, false, 0, false) + "</div>"
@@ -318,9 +370,9 @@ function renderNight() {
     return;
   }
 
-  const { night, members, profileMap, draws, categories, movieMetadata = {}, isMember, assignment, myNomination, mySeen, myRatings, leaderboard } = dashboard;
+  const { night, members, profileMap, draws, drawSubmitters = {}, categories, movieMetadata = {}, isMember, assignment, myNomination, mySeen, myRatings, leaderboard } = dashboard;
   if (!isMember) {
-    nightView.innerHTML = renderEmpty("Non sei in questa serata", "Questa serata è stata aperta prima della tua registrazione. Potrai partecipare alla prossima.")
+    participantsView.innerHTML = renderEmpty("Non sei in questa serata", "Questa serata è stata aperta prima della tua registrazione. Potrai partecipare alla prossima.")
       + (currentProfile?.role === "admin" ? '<div class="admin-control">' + renderAdminPanel(night, false, 0, false) + "</div>" : "");
     return;
   }
@@ -340,28 +392,21 @@ function renderNight() {
     : '<form id="nomination-form" class="nomination-form"><label for="movie-title">Scegli il tuo film</label>' + renderAutocompleteField("movie-title", "Titolo del film…") + '<button class="button button-primary" type="submit">Invia nomination <span aria-hidden="true">→</span></button></form>';
   const drawSection = draws.length
     ? '<div class="divider"></div><div class="section-heading"><div><span class="section-kicker">POOL ESTRATTO</span><h2>Film della serata</h2><p>Vengono mostrati solo dopo il sorteggio.</p></div></div><div class="film-list">'
-      + draws.map((draw, i) => renderDrawCard(draw, i, categories, mySeen, myRatings, night.phase, myNomination?.id, movieMetadata[draw.id])).join("") + "</div>"
+      + draws.map((draw, i) => renderDrawCard(draw, i, categories, mySeen, myRatings, night.phase, myNomination?.id, movieMetadata[draw.id], drawSubmitters[draw.nomination_id])).join("") + "</div>"
     : '<div class="divider"></div><p class="small-muted">I titoli restano segreti fino al sorteggio. Per ora puoi vedere solo chi ha completato la nomination.</p>';
-  const unlockedText = leaderboard?.unlocked
-    ? '<span class="status-chip success">Classifica sbloccata</span>'
-    : '<span class="status-chip">' + (allNominated ? "In attesa delle estrazioni e dei voti" : submittedCount + "/" + memberCount + " nomination") + "</span>";
-
-  nightView.innerHTML = '<div class="night-banner"><div><span class="eyebrow">SERATA CINEMA · '
+  participantsView.innerHTML = '<div class="participants-heading"><div><span class="eyebrow">LA SERATA</span><h2>Partecipanti</h2></div><span class="status-chip '
+    + phaseClass + '">' + escapeHtml(phaseLabel) + '</span></div><div class="night-banner"><div><span class="eyebrow">SERATA CINEMA · '
     + escapeHtml(new Date(night.created_at).toLocaleDateString("it-IT", { day: "numeric", month: "long" }))
-    + '</span><h2>' + escapeHtml(night.title || "Serata cinema") + '</h2><p>Una categoria, una nomination e un film scelto dal caso.</p></div><span class="status-chip '
-    + phaseClass + '">' + escapeHtml(phaseLabel) + '</span></div><div class="stats-grid">'
+    + '</span><h2>' + escapeHtml(night.title || "Serata cinema") + '</h2><p>Una categoria, una nomination e un film scelto dal caso.</p></div></div><div class="stats-grid">'
     + '<article class="stat-card"><div class="stat-label">PARTECIPANTI</div><div class="stat-value">' + memberCount + '<small>persone</small></div></article>'
     + '<article class="stat-card"><div class="stat-label">NOMINATION</div><div class="stat-value">' + submittedCount + '<small>su ' + memberCount + '</small></div></article>'
     + '<article class="stat-card"><div class="stat-label">POOL RIMASTO</div><div class="stat-value">' + poolRemaining + '<small>film</small></div></article></div>'
     + '<div class="content-grid"><div class="main-column"><article class="card assignment-card"><span class="assignment-icon" aria-hidden="true">✦</span><span class="eyebrow">LA TUA CATEGORIA</span><h3>'
     + escapeHtml(categoryName) + '</h3><p>Nomina un film che appartenga a questa categoria. Gli altri vedranno che hai partecipato, non il titolo.</p>'
     + nominationBox + "</article>" + drawSection + '</div><aside class="side-column">'
-    + '<article class="card card-pad"><div class="section-heading"><div><span class="section-kicker">GLI AMICI</span><h2>Partecipanti</h2></div><span class="status-chip">'
+    + '<article class="card card-pad"><div class="section-heading"><div><span class="section-kicker">I TUOI COMPAGNI</span><h2>Partecipanti</h2></div><span class="status-chip">'
     + submittedCount + "/" + memberCount + "</span></div>" + renderMemberRows(members, profileMap) + "</article>"
-    + '<article class="card card-pad"><div class="section-heading"><div><span class="section-kicker">CLASSIFICA</span><h2>Premiazione</h2></div></div><p class="small-muted">'
-    + (leaderboard?.unlocked ? "Il pool è terminato. L’admin può rivelare le posizioni una alla volta." : "Si sblocca quando il pool è vuoto e tutti i film approvati hanno ricevuto un voto.")
-    + "</p>" + unlockedText + "</article><div class=\"admin-control\">"
-    + renderAdminPanel(night, allNominated, poolRemaining, canDraw, hasRejected) + "</div></aside></div>";
+    + '<div class="admin-control">' + renderAdminPanel(night, allNominated, poolRemaining, canDraw, hasRejected) + "</div></aside></div>";
 }
 
 function podiumLabel(position) {
@@ -481,19 +526,57 @@ function renderLeaderboard() {
 
 function renderAll() {
   renderNight();
+  renderParticipants();
   renderLeaderboard();
   const unlocked = Boolean(dashboard?.leaderboard?.unlocked);
   leaderboardTab.disabled = !unlocked;
   leaderboardLock.hidden = unlocked;
-  document.querySelectorAll(".tab[data-tab]").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === activeTab));
   nightView.hidden = activeTab !== "night";
+  participantsView.hidden = activeTab !== "participants";
   leaderboardView.hidden = activeTab !== "leaderboard";
+  tutorialView.hidden = activeTab !== "tutorial";
   if (!unlocked && activeTab === "leaderboard") {
     activeTab = "night";
     nightView.hidden = false;
+    participantsView.hidden = true;
     leaderboardView.hidden = true;
-    document.querySelector('.tab[data-tab="night"]').classList.add("active");
+    tutorialView.hidden = true;
   }
+  document.querySelectorAll(".menu-link[data-page]").forEach((item) => item.classList.toggle("active", item.dataset.page === activeTab));
+}
+
+function setMenuOpen(open) {
+  if (open) {
+    sideMenu.hidden = false;
+    menuBackdrop.hidden = false;
+    requestAnimationFrame(() => {
+      sideMenu.classList.add("is-open");
+      menuBackdrop.classList.add("is-open");
+    });
+    menuToggle.setAttribute("aria-expanded", "true");
+    menuToggle.setAttribute("aria-label", "Chiudi il menu");
+    sideMenu.setAttribute("aria-hidden", "false");
+    return;
+  }
+  sideMenu.classList.remove("is-open");
+  menuBackdrop.classList.remove("is-open");
+  menuToggle.setAttribute("aria-expanded", "false");
+  menuToggle.setAttribute("aria-label", "Apri il menu");
+  sideMenu.setAttribute("aria-hidden", "true");
+  window.setTimeout(() => {
+    if (menuToggle.getAttribute("aria-expanded") === "false") {
+      sideMenu.hidden = true;
+      menuBackdrop.hidden = true;
+    }
+  }, 220);
+}
+
+function setActivePage(page) {
+  if (page === "leaderboard" && leaderboardTab.disabled) return;
+  activeTab = page;
+  setMenuOpen(false);
+  renderAll();
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 async function runAction(action, button) {
@@ -673,18 +756,27 @@ authForm.addEventListener("submit", async (event) => {
 });
 
 document.querySelector("#sign-out").addEventListener("click", async () => {
+  setMenuOpen(false);
   if (!supabase) return;
   const { error } = await supabase.auth.signOut();
   if (error) toast(readableError(error), "error");
   showAuth();
 });
 
-document.querySelector("#refresh-button").addEventListener("click", () => refreshDashboard());
-document.querySelectorAll(".tab[data-tab]").forEach((tab) => tab.addEventListener("click", () => {
-  if (tab.disabled) return;
-  activeTab = tab.dataset.tab;
-  renderAll();
-}));
+document.querySelector("#refresh-button").addEventListener("click", () => {
+  setMenuOpen(false);
+  refreshDashboard();
+});
+menuToggle.addEventListener("click", () => setMenuOpen(menuToggle.getAttribute("aria-expanded") !== "true"));
+menuBackdrop.addEventListener("click", () => setMenuOpen(false));
+document.querySelectorAll(".menu-link[data-page]").forEach((item) => item.addEventListener("click", () => setActivePage(item.dataset.page)));
+document.querySelector("#home-link").addEventListener("click", (event) => {
+  event.preventDefault();
+  setActivePage("night");
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && menuToggle.getAttribute("aria-expanded") === "true") setMenuOpen(false);
+});
 
 document.addEventListener("submit", async (event) => {
   const form = event.target;
