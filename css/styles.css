@@ -33,7 +33,7 @@
 h1, h2, h3, h4, h5, h6, .brand { font-family: "BTTF", "Manrope", sans-serif !important; }
 :is(h1, h2, h3, h4, h5, h6, .brand, .ticket-caption, .film-title, .rank-title) {
   color: transparent;
-  background-image: linear-gradient(180deg, #48c8ff 0%, #0089cf 35%, #ffc91b 67%, #f04e27 100%);
+  background-image: linear-gradient(180deg, #f04e27 0%, #0089cf 100%);
   background-clip: text;
   -webkit-background-clip: text;
   text-shadow: 0 2px 18px rgba(0, 137, 207, .16);
