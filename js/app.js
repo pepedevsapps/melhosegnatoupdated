@@ -542,6 +542,11 @@ async function loadOmdbDetails(drawnFilmId) {
 }
 
 const autocompleteTimers = new WeakMap();
+function setAutocompleteOpen(input, isOpen) {
+  const assignmentCard = input.closest(".assignment-card");
+  assignmentCard?.classList.toggle("autocomplete-open", isOpen);
+}
+
 function updateSuggestions(input, results, status = "") {
   const container = input.closest("[data-autocomplete]");
   const list = container?.querySelector(".autocomplete-suggestions");
@@ -555,6 +560,7 @@ function updateSuggestions(input, results, status = "") {
       || '<div class="autocomplete-message">Nessun film trovato.</div>';
   }
   list.hidden = false;
+  setAutocompleteOpen(input, true);
   input.setAttribute("aria-expanded", "true");
 }
 
@@ -568,6 +574,7 @@ document.addEventListener("input", (event) => {
   if (autocompleteTimers.has(input)) clearTimeout(autocompleteTimers.get(input));
   if (query.length < 3) {
     list.hidden = true;
+    setAutocompleteOpen(input, false);
     input.setAttribute("aria-expanded", "false");
     return;
   }
@@ -605,6 +612,7 @@ document.addEventListener("click", (event) => {
     wrap.querySelector('input[name="omdb_id"]').value = option.dataset.imdbId;
     const list = wrap.querySelector(".autocomplete-suggestions");
     list.hidden = true;
+    setAutocompleteOpen(input, false);
     input.setAttribute("aria-expanded", "false");
     input.focus();
     return;
@@ -612,7 +620,11 @@ document.addEventListener("click", (event) => {
   if (!event.target.closest("[data-autocomplete]")) {
     document.querySelectorAll(".autocomplete-suggestions:not([hidden])").forEach((list) => {
       list.hidden = true;
-      list.closest("[data-autocomplete]")?.querySelector('input[name="title"]')?.setAttribute("aria-expanded", "false");
+      const input = list.closest("[data-autocomplete]")?.querySelector('input[name="title"]');
+      if (input) {
+        setAutocompleteOpen(input, false);
+        input.setAttribute("aria-expanded", "false");
+      }
     });
   }
 });

@@ -126,6 +126,8 @@ a { color: inherit; text-decoration: none; }
 .card { border: 1px solid var(--line); border-radius: 15px; background: rgba(27, 25, 35, .83); }
 .card-pad { padding: 20px; }
 .assignment-card { position: relative; overflow: hidden; min-height: 180px; padding: 22px; border-color: rgba(200, 173, 255, .17); background: linear-gradient(135deg, rgba(91, 72, 117, .2), rgba(27, 25, 35, .88) 65%); }
+.assignment-card.autocomplete-open { z-index: 10; overflow: visible; }
+.assignment-card.autocomplete-open::after { visibility: hidden; }
 .assignment-card::after { position: absolute; right: -29px; bottom: -80px; width: 190px; height: 190px; border: 1px solid rgba(200, 173, 255, .11); border-radius: 50%; box-shadow: 0 0 0 22px rgba(200, 173, 255, .025); content: ""; pointer-events: none; }
 .assignment-card h3 { position: relative; z-index: 1; margin: 9px 0 3px; font: 700 25px/1.2 "Manrope", sans-serif; }
 .assignment-card p { position: relative; z-index: 1; margin: 0; color: var(--muted); font-size: 12px; }
@@ -136,8 +138,9 @@ a { color: inherit; text-decoration: none; }
 .nomination-form input:focus { border-color: rgba(200, 173, 255, .6); }
 .nomination-form input::placeholder { color: var(--faint); }
 .movie-autocomplete { position: relative; min-width: 0; }
+.movie-autocomplete:focus-within { z-index: 21; }
 .movie-autocomplete > input[name="title"] { width: 100%; }
-.autocomplete-suggestions { position: absolute; z-index: 20; top: calc(100% + 5px); right: 0; left: 0; max-height: 240px; overflow: auto; border: 1px solid rgba(200,173,255,.23); border-radius: 10px; background: #211f2b; box-shadow: 0 14px 35px rgba(0,0,0,.38); }
+.autocomplete-suggestions { position: absolute; z-index: 30; top: calc(100% + 5px); right: 0; left: 0; max-height: 240px; overflow: auto; border: 1px solid rgba(200,173,255,.23); border-radius: 10px; background: #211f2b; box-shadow: 0 14px 35px rgba(0,0,0,.38); }
 .autocomplete-option { display: flex; width: 100%; min-height: 40px; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 11px; border: 0; border-bottom: 1px solid rgba(255,255,255,.05); color: var(--text); background: transparent; text-align: left; cursor: pointer; font-size: 11px; }
 .autocomplete-option:last-child { border-bottom: 0; }
 .autocomplete-option:hover, .autocomplete-option:focus-visible { outline: 0; background: rgba(200,173,255,.11); }
