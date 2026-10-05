@@ -311,19 +311,30 @@ returns text language plpgsql security definer set search_path=''
 as $$
 declare
   v_night_id uuid;
+  v_phase text;
   v_status text;
   v_member_count integer;
   v_vote_count integer;
   v_seen_count integer;
   v_next_status text;
+  v_drawn_at timestamptz;
 begin
   if auth.uid() is null then raise exception 'Accedi per votare.'; end if;
-  select night_id,status,member_count into v_night_id,v_status,v_member_count
-  from public.drawn_films where id=p_drawn_film_id for update;
+  select night_id,status,member_count,drawn_at into v_night_id,v_status,v_member_count,v_drawn_at
+    from public.drawn_films where id=p_drawn_film_id for update;
   if v_night_id is null or not public.is_night_member(v_night_id) then
     raise exception 'Film o serata non disponibili.';
   end if;
-  if v_status <> 'checking' then raise exception 'Il voto di verifica è già concluso.'; end if;
+  -- Serializza le modifiche del voto con il sorteggio del film successivo.
+  select phase into v_phase from public.movie_nights where id=v_night_id for update;
+  if v_phase is distinct from 'nominations' then raise exception 'Il periodo per modificare il voto è terminato.'; end if;
+  if v_status not in ('checking','approved','rejected') then
+    raise exception 'Il voto di verifica è già concluso.';
+  end if;
+  if exists(select 1 from public.drawn_films d where d.night_id=v_night_id
+    and (d.drawn_at > v_drawn_at or (d.drawn_at=v_drawn_at and d.id>p_drawn_film_id))) then
+    raise exception 'Il voto di questo film è chiuso perché è già stato estratto il successivo.';
+  end if;
   insert into public.seen_votes(drawn_film_id,user_id,has_seen)
   values(p_drawn_film_id,auth.uid(),p_has_seen)
   on conflict(drawn_film_id,user_id)
@@ -331,15 +342,20 @@ begin
   select count(*),count(*) filter(where has_seen)
     into v_vote_count,v_seen_count
     from public.seen_votes where drawn_film_id=p_drawn_film_id;
-  update public.drawn_films set vote_count=v_vote_count,seen_count=v_seen_count
-    where id=p_drawn_film_id;
   if v_vote_count=v_member_count then
     -- Il titolo viene rifiutato solo quando più del 55% dichiara di averlo già visto.
     v_next_status := case when v_seen_count*100 > v_member_count*55 then 'rejected' else 'approved' end;
-    update public.drawn_films set status=v_next_status,decided_at=now()
+    if v_next_status='rejected' and v_status='approved' then
+      delete from public.movie_ratings where drawn_film_id=p_drawn_film_id;
+      update public.drawn_films set rating_count=0 where id=p_drawn_film_id;
+    end if;
+    update public.drawn_films set vote_count=v_vote_count,seen_count=v_seen_count,
+      status=v_next_status,decided_at=now()
       where id=p_drawn_film_id;
     return v_next_status;
   end if;
+  update public.drawn_films set vote_count=v_vote_count,seen_count=v_seen_count,
+    status='checking',decided_at=null where id=p_drawn_film_id;
   return 'checking';
 end;
 $$;

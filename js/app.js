@@ -281,14 +281,28 @@ function renderMovieMetadata(metadata) {
     + '</div></div>';
 }
 
-function renderSeenVote(draw, mySeen = {}) {
-  if (draw.status === "checking") {
+function renderSeenVote(draw, mySeen = {}, allowRevision = false) {
+  const isChecking = draw.status === "checking";
+  const votesCast = Number(draw.vote_count || 0);
+  const seenCount = Number(draw.seen_count || 0);
+  const seenPercent = votesCast ? (seenCount / votesCast) * 100 : 0;
+  const overThreshold = votesCast > 0 && seenCount * 100 > votesCast * 55;
+  let resultHtml = "";
+  if (draw.status === "rejected") {
+    const finalPercent = draw.member_count ? ((seenCount / draw.member_count) * 100).toFixed(1) : "0.0";
+    resultHtml = '<div class="film-status warning">' + finalPercent + '% (' + seenCount + '/' + draw.member_count
+      + ') lo aveva già visto. Soglia superata: chi ha proposto il film può sostituirlo. La stessa estrazione ripartirà con il nuovo titolo.</div>';
+  } else if (draw.status === "approved") {
+    resultHtml = '<div class="film-status success">Film approvato · ' + seenCount + "/" + draw.member_count
+      + ' persone lo avevano già visto.</div>';
+  }
+
+  if (isChecking || allowRevision) {
     const ownVote = mySeen[draw.id];
-    const votesCast = Number(draw.vote_count || 0);
-    const seenCount = Number(draw.seen_count || 0);
-    const seenPercent = votesCast ? (seenCount / votesCast) * 100 : 0;
-    const overThreshold = votesCast > 0 && seenCount * 100 > votesCast * 55;
-    return '<div class="vote-prompt"><strong>Lo hai già visto?</strong><p>Il film viene sostituito se più del 55% lo ha già visto quando tutti hanno votato.</p>'
+    return resultHtml + '<div class="vote-prompt"><strong>Lo hai già visto?</strong><p>'
+      + (isChecking
+        ? 'Il film viene sostituito se più del 55% lo ha già visto quando tutti hanno votato.'
+        : 'Voto completato. Puoi cambiare la tua risposta finché questa serata è in corso.') + '</p>'
       + '<p class="seen-summary">' + votesCast + '/' + draw.member_count + ' persone hanno votato · ' + seenPercent.toFixed(1) + '% dei voti ricevuti dice “già visto”</p>'
       + '<div class="seen-progress' + (overThreshold ? ' over-threshold' : '') + '" role="progressbar" aria-label="Percentuale dei voti che hanno già visto il film" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + seenPercent.toFixed(1) + '"><span style="width:' + Math.min(100, seenPercent).toFixed(1) + '%"></span></div>'
       + (ownVote === undefined ? "" : '<p class="film-status waiting">La tua risposta è registrata. Puoi cambiarla fino alla chiusura del voto.</p>')
@@ -297,13 +311,7 @@ function renderSeenVote(draw, mySeen = {}) {
       + (ownVote === false ? "button-secondary" : "button-quiet") + '" data-action="seen-vote" data-id="' + draw.id
       + '" data-value="false">Non l’ho visto</button></div></div>';
   }
-  if (draw.status === "rejected") {
-    const percent = draw.member_count ? ((Number(draw.seen_count || 0) / draw.member_count) * 100).toFixed(1) : "0.0";
-    return '<div class="film-status warning">' + percent + '% (' + draw.seen_count + '/' + draw.member_count
-      + ') lo aveva già visto. Soglia superata: chi ha proposto il film può sostituirlo. La stessa estrazione ripartirà con il nuovo titolo.</div>';
-  }
-  return '<div class="film-status success">Film approvato · ' + draw.seen_count + "/" + draw.member_count
-    + ' persone lo avevano già visto.</div>';
+  return resultHtml;
 }
 
 function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNominationId, metadata, submittedBy, showSeenStatus = true) {
@@ -369,7 +377,7 @@ function renderNight() {
     + '<p class="home-movie-submitter">Scelto da <strong>' + escapeHtml(submitter) + '</strong></p>'
     + '<p class="home-movie-description">' + description + '</p></div></article>'
     + '<section class="home-seen-section" aria-label="Voto visto o non visto"><div class="home-verdict-heading">IL TUO VERDETTO</div>'
-    + renderSeenVote(draw, dashboard.mySeen) + '</section>';
+    + renderSeenVote(draw, dashboard.mySeen, dashboard.night.phase === "nominations") + '</section>';
 }
 
 function renderParticipants() {
@@ -607,12 +615,15 @@ async function runAction(action, button) {
       if (detailsError) toast("Film estratto. I dettagli OMDb non sono ancora disponibili.", "error");
       toast("Film estratto. Tutti possono votare se l’hanno già visto.", "success");
     } else if (action === "seen-vote") {
+      const hadVoted = Object.hasOwn(dashboard?.mySeen || {}, button.dataset.id);
       const { error } = await supabase.rpc("submit_seen_vote", {
         p_drawn_film_id: button.dataset.id,
         p_has_seen: button.dataset.value === "true",
       });
       if (error) throw error;
-      toast("Risposta registrata in modo riservato.", "success");
+      toast(hadVoted
+        ? "Risposta aggiornata. Puoi cambiarla finché la serata è in corso."
+        : "Risposta registrata. Puoi cambiarla finché la serata è in corso.", "success");
     } else if (action === "rate-film") {
       const { error } = await supabase.rpc("cast_movie_rating", {
         p_drawn_film_id: button.dataset.id,
