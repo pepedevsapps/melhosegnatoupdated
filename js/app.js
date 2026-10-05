@@ -258,6 +258,14 @@ function ratingLabel(value) {
   return value % 1 ? whole + "½" : String(whole);
 }
 
+function formatDrawnDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Data non disponibile";
+  return new Intl.DateTimeFormat("it-IT", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  }).format(date).replace(",", " ·");
+}
+
 function renderAutocompleteField(inputId, placeholder) {
   return '<div class="movie-autocomplete" data-autocomplete><input id="' + inputId + '" name="title" maxlength="140" required autocomplete="off" aria-autocomplete="list" aria-expanded="false" aria-controls="' + inputId + '-suggestions" placeholder="' + placeholder + '">'
     + '<input type="hidden" name="omdb_id"><div id="' + inputId + '-suggestions" class="autocomplete-suggestions" role="listbox" hidden></div></div>';
@@ -316,6 +324,9 @@ function renderSeenVote(draw, mySeen = {}, allowRevision = false) {
 
 function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNominationId, metadata, submittedBy, showSeenStatus = true) {
   const category = categories[draw.category_id] || "Cinema";
+  const drawnDate = new Date(draw.drawn_at);
+  const dateTime = Number.isNaN(drawnDate.getTime()) ? "" : ' datetime="' + escapeHtml(drawnDate.toISOString()) + '"';
+  const pickedDate = formatDrawnDate(draw.drawn_at);
   let stateHtml = "";
   if (draw.status === "checking") {
     stateHtml = showSeenStatus ? renderSeenVote(draw, mySeen) : "";
@@ -345,7 +356,8 @@ function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNom
   return '<article class="film-card"><div class="film-card-content"><h3 class="film-title">' + escapeHtml(draw.title) + '</h3><div class="film-meta">'
     + escapeHtml(category) + " · estratto " + (index + 1) + (submittedBy ? " · proposto da " + escapeHtml(submittedBy) : "")
     + "</div>" + renderMovieMetadata(metadata) + stateHtml
-    + '</div><span class="film-num">' + String(index + 1).padStart(2, "0") + "</span></article>";
+    + '</div><aside class="film-card-aside"><span class="film-num">' + String(index + 1).padStart(2, "0")
+    + '</span><time class="film-date"' + dateTime + '>' + escapeHtml(pickedDate) + '</time></aside></article>';
 }
 
 function renderNight() {
@@ -400,6 +412,12 @@ function renderParticipants() {
   const submittedCount = members.filter((member) => member.has_nominated).length;
   const allNominated = memberCount > 0 && submittedCount === memberCount;
   const poolRemaining = Math.max(0, submittedCount - draws.length);
+  const chronologicalDraws = [...draws].sort((a, b) => {
+    const aTime = Date.parse(a.drawn_at) || 0;
+    const bTime = Date.parse(b.drawn_at) || 0;
+    return aTime - bTime || String(a.id).localeCompare(String(b.id));
+  });
+  const currentDrawId = chronologicalDraws.at(-1)?.id;
   const hasChecking = draws.some((draw) => draw.status === "checking");
   const waitingRatings = draws.some((draw) => draw.status === "approved" && draw.rating_count < draw.member_count);
   const hasRejected = draws.some((draw) => draw.status === "rejected");
@@ -410,9 +428,9 @@ function renderParticipants() {
   const nominationBox = myNomination
     ? '<div class="your-nomination"><span aria-hidden="true">✓</span> Nomination inviata: <strong>' + escapeHtml(myNomination.title) + "</strong></div>"
     : '<form id="nomination-form" class="nomination-form"><label for="movie-title">Scegli il tuo film</label>' + renderAutocompleteField("movie-title", "Titolo del film…") + '<button class="button button-primary" type="submit">Invia nomination <span aria-hidden="true">→</span></button></form>';
-  const drawSection = draws.length
+  const drawSection = chronologicalDraws.length
     ? '<div class="divider"></div><div class="section-heading"><div><span class="section-kicker">POOL ESTRATTO</span><h2>Film della serata</h2><p>Vengono mostrati solo dopo il sorteggio.</p></div></div><div class="film-list">'
-      + draws.map((draw, i) => renderDrawCard(draw, i, categories, mySeen, myRatings, night.phase, myNomination?.id, movieMetadata[draw.id], drawSubmitters[draw.nomination_id], draw.id !== draws[draws.length - 1]?.id)).join("") + "</div>"
+      + chronologicalDraws.map((draw, i) => renderDrawCard(draw, i, categories, mySeen, myRatings, night.phase, myNomination?.id, movieMetadata[draw.id], drawSubmitters[draw.nomination_id], draw.id !== currentDrawId)).join("") + "</div>"
     : '<div class="divider"></div><p class="small-muted">I titoli restano segreti fino al sorteggio. Per ora puoi vedere solo chi ha completato la nomination.</p>';
   participantsView.innerHTML = '<div class="participants-heading"><div><span class="eyebrow">LA SERATA</span><h2>Partecipanti</h2></div><span class="status-chip '
     + phaseClass + '">' + escapeHtml(phaseLabel) + '</span></div><div class="night-banner"><div><span class="eyebrow">SERATA CINEMA · '

@@ -212,6 +212,8 @@ a { color: inherit; text-decoration: none; }
 .film-list { display: grid; gap: 9px; margin-top: 12px; }
 .film-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 13px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.023); }
 .film-card-content { flex: 1; min-width: 0; }
+.film-card-aside { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 7px; }
+.film-date { max-width: 130px; color: var(--faint); font-size: 9px; line-height: 1.35; text-align: right; }
 .movie-details { display: flex; align-items: flex-start; gap: 13px; margin-top: 12px; padding: 11px; border: 1px solid rgba(255,255,255,.05); border-radius: 10px; background: rgba(0,0,0,.13); }
 .movie-poster, .movie-poster-placeholder { display: grid; place-items: center; flex: 0 0 78px; width: 78px; aspect-ratio: 2 / 3; border-radius: 6px; background: rgba(255,255,255,.06); object-fit: cover; }
 .movie-poster-placeholder { color: var(--faint); font-size: 24px; }
@@ -371,6 +373,8 @@ a { color: inherit; text-decoration: none; }
   .nomination-form .button { width: 100%; }
   .side-column { grid-template-columns: 1fr; }
   .film-card { padding: 12px; }
+  .film-card-aside { max-width: 92px; }
+  .film-date { max-width: 92px; font-size: 8px; }
   .leaderboard-header { align-items: flex-start; flex-direction: column; }
   .reveal-progress { text-align: left; }
   .rank-card { grid-template-columns: 42px minmax(0,1fr) auto; gap: 9px; min-height: 72px; padding: 10px; }
