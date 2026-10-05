@@ -368,7 +368,7 @@ function renderNight() {
     + '<span class="home-movie-category">' + escapeHtml(category) + '</span><h2>' + escapeHtml(draw.title) + '</h2>'
     + '<p class="home-movie-submitter">Scelto da <strong>' + escapeHtml(submitter) + '</strong></p>'
     + '<p class="home-movie-description">' + description + '</p></div></article>'
-    + '<section class="home-seen-section" aria-label="Voto visto o non visto"><div class="home-verdict-heading"><span>IL TUO VERDETTO</span><span aria-hidden="true">🍿</span></div>'
+    + '<section class="home-seen-section" aria-label="Voto visto o non visto"><div class="home-verdict-heading">IL TUO VERDETTO</div>'
     + renderSeenVote(draw, dashboard.mySeen) + '</section>';
 }
 
