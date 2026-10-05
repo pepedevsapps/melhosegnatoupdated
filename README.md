@@ -76,15 +76,11 @@ npx supabase config diff --project-ref pmfnvpmfmmixmfncjvti
 npx supabase config push --project-ref pmfnvpmfmmixmfncjvti
 ```
 
-`supabase/config.toml` consente i redirect locali da `localhost:8000` e `127.0.0.1:8000`. Il Site URL è impostato temporaneamente su `http://localhost:8000`; dopo la pubblicazione sostituiscilo con l'URL del sito e aggiungi quell'URL ai redirect consentiti, mantenendo gli URL locali per lo sviluppo.
+`supabase/config.toml` imposta il Site URL di produzione su `https://pepedevsapps.github.io/melhosegnatoupdated/` e consente i redirect sia dal sito pubblicato sia dagli indirizzi locali `localhost:8000` e `127.0.0.1:8000`.
 
 ## 4. Pubblica su GitHub Pages
 
-1. Crea un repository GitHub e carica il contenuto di questa cartella nella branch `main`.
-2. In **Settings → Pages**, scegli **GitHub Actions** come fonte di pubblicazione.
-3. Il workflow `.github/workflows/pages.yml` pubblica automaticamente la web app a ogni push su `main`.
-4. Dopo il primo workflow completato, GitHub mostra l'URL del sito nelle impostazioni Pages e nel riepilogo del workflow.
-5. Aggiungi quell'URL alla configurazione URL di Supabase indicata sopra.
+Il progetto è pubblicato su [GitHub](https://github.com/pepedevsapps/melhosegnatoupdated) e disponibile su [GitHub Pages](https://pepedevsapps.github.io/melhosegnatoupdated/). Il workflow `.github/workflows/pages.yml` pubblica automaticamente gli aggiornamenti a ogni push su `main`.
 
 Le risorse HTML, CSS e JS usano percorsi relativi, quindi funzionano anche sotto il percorso `/NOME-REPOSITORY/` di GitHub Pages.
 

@@ -1,8 +1,9 @@
 project_id = "popcorn-club"
 
 [auth]
-site_url = "http://localhost:8000"
+site_url = "https://pepedevsapps.github.io/melhosegnatoupdated/"
 additional_redirect_urls = [
+  "https://pepedevsapps.github.io/melhosegnatoupdated/**",
   "http://localhost:8000/**",
   "http://127.0.0.1:8000/**",
 ]
