@@ -10,7 +10,7 @@ Web app responsive, pubblicabile su GitHub Pages. Usa Supabase Auth e Postgres p
 - Assegnazione casuale delle categorie. Se le persone sono più delle categorie, le categorie ricominciano dopo una nuova mescolata.
 - Nomination privata: ogni partecipante vede il proprio titolo e lo stato di invio degli altri, ma non i loro titoli.
 - Sorteggio casuale da parte dell'admin. Ogni nomination estratta esce definitivamente dal pool.
-- Verifica anonima “L'ho visto / Non l'ho visto”; si decide solo dopo le risposte di tutti. Se almeno il 60% dichiara di averlo già visto, il titolo viene scartato.
+- Verifica anonima “L'ho visto / Non l'ho visto”, con conteggio dei voti e percentuale aggregata in tempo reale. Se più del 55% dichiara di averlo già visto, chi ha proposto il film può sostituire il titolo sulla stessa estrazione; la verifica riparte da zero.
 - Valutazione dei film approvati da 1 a 5 popcorn, con mezzi punti.
 - Classifica sbloccata quando il pool è vuoto e tutti i film approvati hanno ricevuto il voto di tutti. L'admin rivela una posizione alla volta, dall'ultima fino al podio.
 - I titoli duplicati nella stessa serata sono rifiutati dopo normalizzazione di maiuscole e spazi.
@@ -26,7 +26,7 @@ Web app responsive, pubblicabile su GitHub Pages. Usa Supabase Auth e Postgres p
 ## 1. Configura Supabase
 
 1. Crea un nuovo progetto Supabase.
-2. Apri **SQL Editor**, incolla tutto il contenuto di `supabase/schema.sql` ed eseguilo. Lo script è pensato per un progetto nuovo.
+2. Apri **SQL Editor**, incolla tutto il contenuto di `supabase/schema.sql` ed eseguilo. Lo script inizializza il progetto e può essere rieseguito per aggiornare funzioni e colonne.
 3. Prima di creare l'account admin, esegui questo comando sostituendo l'indirizzo:
 
    ```sql
@@ -89,8 +89,8 @@ Le risorse HTML, CSS e JS usano percorsi relativi, quindi funzionano anche sotto
 1. Gli utenti si registrano prima che l'admin avvii la serata. Chi si registra dopo l'avvio potrà partecipare alla successiva.
 2. L'admin preme **Assegna le categorie**. Tutti gli account esistenti, admin incluso, ricevono una categoria.
 3. Ogni utente invia una sola nomination. Gli altri vedono chi ha partecipato, senza leggere i titoli.
-4. L'admin estrae un film. Tutti votano se lo hanno già visto. Il film viene approvato se meno del 60% lo ha già visto; con il 60% esatto viene sostituito.
-5. Se approvato, tutti assegnano un voto. L'admin può quindi estrarre il prossimo titolo.
+4. L'admin estrae un film. Tutti votano se lo hanno già visto. I conteggi sono anonimi; il film viene rifiutato se più del 55% risponde “L'ho visto”.
+5. Se il film viene rifiutato, chi ha inviato la nomination lo sostituisce. Il titolo cambia sulla stessa estrazione e tutti votano di nuovo. Se viene approvato, tutti assegnano un voto e l'admin può estrarre il prossimo titolo.
 6. Quando il pool è vuoto e ogni film approvato ha un voto da tutti, si sblocca la classifica. L'admin rivela le posizioni in sequenza; i pari merito sono ordinati alfabeticamente per titolo.
 7. Quando il podio è completo, l'admin può avviare una nuova serata.
 

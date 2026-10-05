@@ -136,7 +136,7 @@ async function refreshDashboard(quiet = false) {
     const categories = Object.fromEntries((categoryRows || []).map((category) => [category.id, category.name]));
 
     const { data: drawRows, error: drawError } = await supabase
-      .from("drawn_films").select("id,title,category_id,status,member_count,rating_count,seen_count,drawn_at,decided_at")
+      .from("drawn_films").select("id,nomination_id,title,category_id,status,member_count,vote_count,rating_count,seen_count,drawn_at,decided_at")
       .eq("night_id", night.id).order("drawn_at", { ascending: true });
     if (drawError) throw drawError;
     const draws = drawRows || [];
@@ -152,7 +152,7 @@ async function refreshDashboard(quiet = false) {
       if (assignmentError) throw assignmentError;
       assignment = assignmentRows?.[0] || null;
       const { data: nomination, error: nominationError } = await supabase
-        .from("movie_nominations").select("title,status").eq("night_id", night.id).eq("user_id", currentUser.id).maybeSingle();
+        .from("movie_nominations").select("id,title,status").eq("night_id", night.id).eq("user_id", currentUser.id).maybeSingle();
       if (nominationError) throw nominationError;
       myNomination = nomination;
 
@@ -193,7 +193,7 @@ function renderEmpty(title, description, action = "") {
     + escapeHtml(title) + "</h2><p>" + escapeHtml(description) + "</p>" + action + "</div></div>";
 }
 
-function renderAdminPanel(night, allNominated, poolRemaining, canDraw) {
+function renderAdminPanel(night, allNominated, poolRemaining, canDraw, replacementPending = false) {
   if (currentProfile?.role !== "admin") return "";
   if (!night) {
     return '<article class="card admin-card"><h3>Controlli admin</h3><p>Avvia una serata: verrà assegnata una categoria casuale a ogni account già registrato.</p><button class="button button-primary" data-action="start-night">Assegna le categorie</button></article>';
@@ -203,6 +203,7 @@ function renderAdminPanel(night, allNominated, poolRemaining, canDraw) {
   }
   let explanation = "";
   if (!allNominated) explanation = "Aspetta che tutti i partecipanti inviino la propria nomination.";
+  else if (replacementPending) explanation = "In attesa che chi ha proposto il film inserisca un titolo sostitutivo.";
   else if (poolRemaining === 0) explanation = "Pool esaurito. Completa i voti rimasti per sbloccare la classifica.";
   else if (!canDraw) explanation = "Completa la verifica e le valutazioni del film attuale prima della prossima estrazione.";
   else explanation = poolRemaining + (poolRemaining === 1 ? " film nel pool, pronto per il sorteggio." : " film nel pool, pronti per il sorteggio.");
@@ -232,20 +233,35 @@ function ratingLabel(value) {
   return value % 1 ? whole + "½" : String(whole);
 }
 
-function renderDrawCard(draw, index, categories, mySeen, myRatings, phase) {
+function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, myNominationId) {
   const category = categories[draw.category_id] || "Cinema";
   let stateHtml = "";
   if (draw.status === "checking") {
     const ownVote = mySeen[draw.id];
-    stateHtml = '<div class="vote-prompt"><strong>Lo hai già visto?</strong><p>Il risultato resta segreto finché tutti non hanno risposto. Il film viene sostituito se almeno il 60% lo ha già visto.</p>'
+    const votesCast = Number(draw.vote_count || 0);
+    const seenCount = Number(draw.seen_count || 0);
+    const seenPercent = votesCast ? (seenCount / votesCast) * 100 : 0;
+    const overThreshold = votesCast > 0 && seenCount * 100 > votesCast * 55;
+    stateHtml = '<div class="vote-prompt"><strong>Lo hai già visto?</strong><p>Il film viene sostituito se più del 55% lo ha già visto quando tutti hanno votato.</p>'
+      + '<p class="seen-summary">' + votesCast + '/' + draw.member_count + ' persone hanno votato · ' + seenPercent.toFixed(1) + '% dei voti ricevuti dice “già visto”</p>'
+      + '<div class="seen-progress' + (overThreshold ? ' over-threshold' : '') + '" role="progressbar" aria-label="Percentuale dei voti che hanno già visto il film" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + seenPercent.toFixed(1) + '"><span style="width:' + Math.min(100, seenPercent).toFixed(1) + '%"></span></div>'
       + (ownVote === undefined ? "" : '<p class="film-status waiting">La tua risposta è registrata. Puoi cambiarla fino alla chiusura del voto.</p>')
       + '<div class="seen-actions"><button class="button ' + (ownVote === true ? "button-danger" : "button-quiet")
       + '" data-action="seen-vote" data-id="' + draw.id + '" data-value="true">L’ho visto</button><button class="button '
       + (ownVote === false ? "button-secondary" : "button-quiet") + '" data-action="seen-vote" data-id="' + draw.id
       + '" data-value="false">Non l’ho visto</button></div></div>';
   } else if (draw.status === "rejected") {
-    stateHtml = '<div class="film-status warning">Film sostituito · ' + draw.seen_count + "/" + draw.member_count
-      + " persone lo avevano già visto. Il titolo non rientra nel pool.</div>";
+    const finalSeenPercent = draw.member_count ? ((Number(draw.seen_count || 0) / draw.member_count) * 100).toFixed(1) : "0.0";
+    stateHtml = '<div class="film-status warning">' + finalSeenPercent + '% (' + draw.seen_count + '/' + draw.member_count
+      + ') lo aveva già visto. Soglia superata: chi ha proposto il film può sostituirlo. La stessa estrazione ripartirà con il nuovo titolo.</div>';
+    if (draw.nomination_id === myNominationId) {
+      stateHtml += '<form id="replace-nomination-form" class="nomination-form" data-drawn-film-id="' + draw.id + '">'
+        + '<label for="replacement-title-' + draw.id + '">Inserisci un altro film per questa estrazione</label>'
+        + '<input id="replacement-title-' + draw.id + '" name="title" maxlength="140" required placeholder="Titolo del nuovo film…">'
+        + '<button class="button button-primary" type="submit">Sostituisci film <span aria-hidden="true">→</span></button></form>';
+    } else {
+      stateHtml += '<p class="small-muted">In attesa del nuovo titolo da chi ha inviato la nomination.</p>';
+    }
   } else {
     const rating = myRatings[draw.id];
     const canEdit = phase === "nominations";
@@ -287,7 +303,8 @@ function renderNight() {
   const poolRemaining = Math.max(0, submittedCount - draws.length);
   const hasChecking = draws.some((draw) => draw.status === "checking");
   const waitingRatings = draws.some((draw) => draw.status === "approved" && draw.rating_count < draw.member_count);
-  const canDraw = night.phase === "nominations" && allNominated && poolRemaining > 0 && !hasChecking && !waitingRatings;
+  const hasRejected = draws.some((draw) => draw.status === "rejected");
+  const canDraw = night.phase === "nominations" && allNominated && poolRemaining > 0 && !hasChecking && !hasRejected && !waitingRatings;
   const phaseLabel = night.phase === "complete" ? "Serata conclusa" : leaderboard?.unlocked ? "Classifica da rivelare" : "Serata in corso";
   const phaseClass = night.phase === "complete" ? "success" : "";
   const categoryName = assignment?.category_name || "Categoria assegnata";
@@ -296,7 +313,7 @@ function renderNight() {
     : '<form id="nomination-form" class="nomination-form"><label for="movie-title">Scegli il tuo film</label><input id="movie-title" name="title" maxlength="140" required placeholder="Titolo del film…"><button class="button button-primary" type="submit">Invia nomination <span aria-hidden="true">→</span></button></form>';
   const drawSection = draws.length
     ? '<div class="divider"></div><div class="section-heading"><div><span class="section-kicker">POOL ESTRATTO</span><h2>Film della serata</h2><p>Vengono mostrati solo dopo il sorteggio.</p></div></div><div class="film-list">'
-      + draws.map((draw, i) => renderDrawCard(draw, i, categories, mySeen, myRatings, night.phase)).join("") + "</div>"
+      + draws.map((draw, i) => renderDrawCard(draw, i, categories, mySeen, myRatings, night.phase, myNomination?.id)).join("") + "</div>"
     : '<div class="divider"></div><p class="small-muted">I titoli restano segreti fino al sorteggio. Per ora puoi vedere solo chi ha completato la nomination.</p>';
   const unlockedText = leaderboard?.unlocked
     ? '<span class="status-chip success">Classifica sbloccata</span>'
@@ -317,7 +334,7 @@ function renderNight() {
     + '<article class="card card-pad"><div class="section-heading"><div><span class="section-kicker">CLASSIFICA</span><h2>Premiazione</h2></div></div><p class="small-muted">'
     + (leaderboard?.unlocked ? "Il pool è terminato. L’admin può rivelare le posizioni una alla volta." : "Si sblocca quando il pool è vuoto e tutti i film approvati hanno ricevuto un voto.")
     + "</p>" + unlockedText + "</article><div class=\"admin-control\">"
-    + renderAdminPanel(night, allNominated, poolRemaining, canDraw) + "</div></aside></div>";
+    + renderAdminPanel(night, allNominated, poolRemaining, canDraw, hasRejected) + "</div></aside></div>";
 }
 
 function podiumLabel(position) {
@@ -478,23 +495,32 @@ document.querySelectorAll(".tab[data-tab]").forEach((tab) => tab.addEventListene
 }));
 
 document.addEventListener("submit", async (event) => {
-  if (event.target.id !== "nomination-form") return;
+  const form = event.target;
+  const isReplacement = form.id === "replace-nomination-form";
+  if (!isReplacement && form.id !== "nomination-form") return;
   event.preventDefault();
-  const button = event.target.querySelector('button[type="submit"]');
-  const title = new FormData(event.target).get("title").toString().trim();
+  const button = form.querySelector('button[type="submit"]');
+  const title = new FormData(form).get("title").toString().trim();
   const originalButtonLabel = button.innerHTML;
   button.disabled = true;
   button.textContent = "Invio…";
   let submitted = false;
   try {
-    const { error } = await supabase.rpc("submit_nomination", {
-      p_night_id: dashboard.night.id,
-      p_title: title,
-    });
+    const { error } = isReplacement
+      ? await supabase.rpc("replace_rejected_nomination", {
+          p_drawn_film_id: form.dataset.drawnFilmId,
+          p_title: title,
+        })
+      : await supabase.rpc("submit_nomination", {
+          p_night_id: dashboard.night.id,
+          p_title: title,
+        });
     if (error) throw error;
     submitted = true;
     button.textContent = "Salvata ✓";
-    toast("Nomination salvata: il titolo resta segreto finché non viene estratto.", "success");
+    toast(isReplacement
+      ? "Film sostituito: la votazione riparte sul nuovo titolo."
+      : "Nomination salvata: il titolo resta segreto finché non viene estratto.", "success");
     await refreshDashboard();
   } catch (error) {
     toast(readableError(error), "error");

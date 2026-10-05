@@ -1,5 +1,5 @@
 -- Serata Cinema: schema iniziale per un progetto Supabase vuoto.
--- Eseguire una sola volta nel SQL Editor. Non inserire qui password o service_role key.
+-- Eseguire nel SQL Editor per inizializzare o aggiornare lo schema. Non inserire qui password o service_role key.
 
 create table if not exists public.admin_bootstrap (
   singleton boolean primary key default true check (singleton),
@@ -71,12 +71,14 @@ create table if not exists public.drawn_films (
   category_id integer not null references public.film_categories(id),
   status text not null default 'checking' check (status in ('checking','approved','rejected')),
   member_count integer not null check (member_count > 0),
+  vote_count integer not null default 0 check (vote_count >= 0),
   rating_count integer not null default 0 check (rating_count >= 0),
   seen_count integer,
   drawn_at timestamptz not null default now(),
   decided_at timestamptz
 );
--- Le risposte individuali non vengono mostrate agli altri.
+alter table public.drawn_films add column if not exists vote_count integer not null default 0 check (vote_count >= 0);
+-- Le risposte individuali restano private; ai membri viene mostrato solo il conteggio aggregato.
 create table if not exists public.seen_votes (
   drawn_film_id uuid not null references public.drawn_films(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
@@ -84,6 +86,9 @@ create table if not exists public.seen_votes (
   voted_at timestamptz not null default now(),
   primary key(drawn_film_id,user_id)
 );
+update public.drawn_films d set
+  vote_count=(select count(*) from public.seen_votes sv where sv.drawn_film_id=d.id),
+  seen_count=(select count(*) from public.seen_votes sv where sv.drawn_film_id=d.id and sv.has_seen);
 create table if not exists public.movie_ratings (
   drawn_film_id uuid not null references public.drawn_films(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
@@ -221,6 +226,9 @@ begin
   if exists(select 1 from public.drawn_films where night_id=p_night_id and status='checking') then
     raise exception 'Completa prima il voto visto/non visto.';
   end if;
+  if exists(select 1 from public.drawn_films where night_id=p_night_id and status='rejected') then
+    raise exception 'Il responsabile della nomination deve sostituire il titolo rifiutato.';
+  end if;
   if exists(select 1 from public.drawn_films d where d.night_id=p_night_id and d.status='approved'
     and (select count(*) from public.movie_ratings r where r.drawn_film_id=d.id)<d.member_count) then
     raise exception 'Aspetta che tutti votino il film approvato.';
@@ -232,8 +240,8 @@ begin
   if v_nomination.id is null then raise exception 'Il pool delle nomination è vuoto.'; end if;
   select count(*) into v_member_count from public.night_members where night_id=p_night_id;
   update public.movie_nominations set status='drawn' where id=v_nomination.id;
-  insert into public.drawn_films(id,night_id,nomination_id,title,category_id,member_count)
-  values(v_film_id,p_night_id,v_nomination.id,v_nomination.title,v_nomination.category_id,v_member_count);
+  insert into public.drawn_films(id,night_id,nomination_id,title,category_id,member_count,vote_count,seen_count)
+  values(v_film_id,p_night_id,v_nomination.id,v_nomination.title,v_nomination.category_id,v_member_count,0,0);
   return v_film_id;
 end;
 $$;
@@ -265,21 +273,65 @@ begin
   select count(*),count(*) filter(where has_seen)
     into v_vote_count,v_seen_count
     from public.seen_votes where drawn_film_id=p_drawn_film_id;
+  update public.drawn_films set vote_count=v_vote_count,seen_count=v_seen_count
+    where id=p_drawn_film_id;
   if v_vote_count=v_member_count then
-    -- Soglia inclusiva: almeno il 60% dichiara di averlo già visto.
-    v_next_status := case when v_seen_count*10 >= v_member_count*6 then 'rejected' else 'approved' end;
-    update public.drawn_films set status=v_next_status,seen_count=v_seen_count,decided_at=now()
+    -- Il titolo viene rifiutato solo quando più del 55% dichiara di averlo già visto.
+    v_next_status := case when v_seen_count*100 > v_member_count*55 then 'rejected' else 'approved' end;
+    update public.drawn_films set status=v_next_status,decided_at=now()
       where id=p_drawn_film_id;
-    if v_next_status='rejected'
-       and not exists(select 1 from public.movie_nominations where night_id=v_night_id and status='queued')
-       and not exists(select 1 from public.drawn_films where night_id=v_night_id and status='checking')
-       and not exists(select 1 from public.drawn_films d where d.night_id=v_night_id and d.status='approved'
-          and (select count(*) from public.movie_ratings r where r.drawn_film_id=d.id)<d.member_count) then
-      update public.movie_nights set phase='complete',finished_at=now() where id=v_night_id;
-    end if;
     return v_next_status;
   end if;
   return 'checking';
+end;
+$$;
+
+create or replace function public.replace_rejected_nomination(p_drawn_film_id uuid,p_title text)
+returns void language plpgsql security definer set search_path=''
+as $$
+declare
+  v_night_id uuid;
+  v_nomination_id uuid;
+  v_status text;
+  v_phase text;
+  v_revealed_count integer;
+  v_title text := trim(coalesce(p_title,''));
+  v_normalized text;
+begin
+  if auth.uid() is null then raise exception 'Accedi per sostituire il film.'; end if;
+  if char_length(v_title)<2 or char_length(v_title)>140 then
+    raise exception 'Inserisci un titolo tra 2 e 140 caratteri.';
+  end if;
+  select d.night_id,d.nomination_id,d.status into v_night_id,v_nomination_id,v_status
+    from public.drawn_films d where d.id=p_drawn_film_id for update;
+  if v_night_id is null or not public.is_night_member(v_night_id) then
+    raise exception 'Film o serata non disponibili.';
+  end if;
+  if v_status <> 'rejected' then
+    raise exception 'La sostituzione è disponibile solo dopo un voto sfavorevole.';
+  end if;
+  select n.status into v_status from public.movie_nominations n
+    where n.id=v_nomination_id and n.user_id=auth.uid() for update;
+  if not found then raise exception 'Solo chi ha proposto il film può sostituirlo.'; end if;
+  select n.phase,n.revealed_count into v_phase,v_revealed_count
+    from public.movie_nights n where n.id=v_night_id for update;
+  if v_phase='complete' and v_revealed_count=0 then
+    -- Consenti il recupero dei rifiuti conclusi dal vecchio flusso a soglia 60%.
+    update public.movie_nights set phase='nominations',finished_at=null where id=v_night_id;
+  elsif v_phase <> 'nominations' then
+    raise exception 'La fase nomination è terminata.';
+  end if;
+  v_normalized := lower(regexp_replace(v_title,'\s+',' ','g'));
+  begin
+    update public.movie_nominations set title=v_title,normalized_title=v_normalized
+      where id=v_nomination_id;
+  exception when unique_violation then
+    raise exception 'Questo titolo è già stato nominato nella serata.';
+  end;
+  delete from public.seen_votes where drawn_film_id=p_drawn_film_id;
+  delete from public.movie_ratings where drawn_film_id=p_drawn_film_id;
+  update public.drawn_films set title=v_title,status='checking',vote_count=0,seen_count=0,
+    rating_count=0,decided_at=null where id=p_drawn_film_id;
 end;
 $$;
 
@@ -330,6 +382,7 @@ begin
   ) where id=p_drawn_film_id;
   if not exists(select 1 from public.movie_nominations where night_id=v_night_id and status='queued')
      and not exists(select 1 from public.drawn_films where night_id=v_night_id and status='checking')
+     and not exists(select 1 from public.drawn_films where night_id=v_night_id and status='rejected')
      and not exists(select 1 from public.drawn_films d where d.night_id=v_night_id and d.status='approved'
         and (select count(*) from public.movie_ratings r where r.drawn_film_id=d.id)<d.member_count) then
     update public.movie_nights set phase='leaderboard' where id=v_night_id and phase='nominations';
@@ -358,6 +411,7 @@ begin
   v_ready := v_phase in ('leaderboard','complete')
     and not exists(select 1 from public.movie_nominations where night_id=p_night_id and status='queued')
     and not exists(select 1 from public.drawn_films where night_id=p_night_id and status='checking')
+    and not exists(select 1 from public.drawn_films where night_id=p_night_id and status='rejected')
     and not exists(select 1 from public.drawn_films d where d.night_id=p_night_id and d.status='approved'
       and (select count(*) from public.movie_ratings r where r.drawn_film_id=d.id)<d.member_count);
   return query select v_ready,v_total,v_revealed,v_phase;
@@ -505,6 +559,7 @@ revoke all on function public.get_my_assignment(uuid) from public,anon,authentic
 revoke all on function public.submit_nomination(uuid,text) from public,anon,authenticated;
 revoke all on function public.admin_draw_next(uuid) from public,anon,authenticated;
 revoke all on function public.submit_seen_vote(uuid,boolean) from public,anon,authenticated;
+revoke all on function public.replace_rejected_nomination(uuid,text) from public,anon,authenticated;
 revoke all on function public.get_my_seen_vote(uuid) from public,anon,authenticated;
 revoke all on function public.get_my_rating(uuid) from public,anon,authenticated;
 revoke all on function public.cast_movie_rating(uuid,numeric) from public,anon,authenticated;
@@ -518,6 +573,7 @@ grant execute on function public.get_my_assignment(uuid) to authenticated;
 grant execute on function public.submit_nomination(uuid,text) to authenticated;
 grant execute on function public.admin_draw_next(uuid) to authenticated;
 grant execute on function public.submit_seen_vote(uuid,boolean) to authenticated;
+grant execute on function public.replace_rejected_nomination(uuid,text) to authenticated;
 grant execute on function public.get_my_seen_vote(uuid) to authenticated;
 grant execute on function public.get_my_rating(uuid) to authenticated;
 grant execute on function public.cast_movie_rating(uuid,numeric) to authenticated;
