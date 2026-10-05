@@ -246,11 +246,10 @@ a { color: inherit; text-decoration: none; }
 .podium-hint { margin: 20px 0; color: var(--muted); font-size: 11px; text-align: center; }
 .winner-screen { position: relative; display: grid; place-items: center; min-height: min(740px, 76vh); margin: 12px 0; padding: 45px 20px; overflow: hidden; border: 1px solid rgba(247,189,104,.2); border-radius: 20px; background: radial-gradient(ellipse at 50% 8%, rgba(247,189,104,.16), transparent 50%), linear-gradient(150deg, rgba(45,34,52,.9), rgba(19,17,26,.97)); text-align: center; }
 .confetti-rain { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-.confetti-rain i { position: absolute; top: -15px; width: 8px; height: 14px; border-radius: 2px; background: var(--amber); opacity: .85; animation: confetti-fall 5s linear infinite; }
+.confetti-rain i { position: absolute; top: -15px; width: var(--piece-width); height: var(--piece-height); border-radius: 2px; background: var(--amber); opacity: .85; animation: confetti-fall var(--fall-duration) linear var(--fall-delay) infinite; }
 .confetti-rain i:nth-child(3n) { background: var(--mint); }
 .confetti-rain i:nth-child(3n + 1) { background: var(--lavender); }
 .confetti-rain i:nth-child(3n + 2) { background: var(--rose); }
-.confetti-rain i:nth-child(2n) { width: 6px; height: 10px; }
 .winner-content { position: relative; z-index: 1; width: min(670px, 100%); }
 .winner-crown { margin: 8px 0 4px; color: var(--amber); font-size: 42px; text-shadow: 0 0 35px rgba(247,189,104,.38); }
 .winner-kicker { margin: 0; color: var(--amber); font-size: 11px; font-weight: 800; letter-spacing: 2px; }
@@ -267,7 +266,7 @@ a { color: inherit; text-decoration: none; }
 .winner-score { margin-top: 13px; color: var(--amber); font: 800 22px "Manrope", sans-serif; }
 .winner-score small { color: var(--muted); font: 500 10px "DM Sans", sans-serif; }
 .winner-footer { margin: 19px 0 0; color: var(--muted); font-size: 11px; }
-@keyframes confetti-fall { from { transform: translate3d(0,-15vh,0) rotate(0); } to { transform: translate3d(35px,115vh,0) rotate(760deg); } }
+@keyframes confetti-fall { from { transform: translate3d(0,-15vh,0) rotate(0); } to { transform: translate3d(var(--drift-x),115vh,0) rotate(var(--spin)); } }
 @keyframes winner-arrive { from { opacity: 0; transform: translateY(18px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes rank-unveil { from { opacity: .25; transform: scale(.975); } to { opacity: 1; transform: scale(1); } }
 .rank-card { position: relative; display: grid; grid-template-columns: 52px minmax(0,1fr) auto; align-items: center; gap: 14px; min-height: 80px; padding: 13px 17px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.025); animation: rise-in .35s ease both; }

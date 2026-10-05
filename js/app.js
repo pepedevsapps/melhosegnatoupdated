@@ -404,8 +404,17 @@ function renderRankSlot(position, movie, nextPosition, totalFilms, isAdmin, podi
 }
 
 function renderWinnerScreen(winner) {
-  const confetti = Array.from({ length: 48 }, (_, index) => '<i style="left:' + (index * 100 / 48).toFixed(2)
-    + '%;animation-delay:-' + (index * 0.11).toFixed(2) + 's"></i>').join("");
+  const randomBetween = (min, max) => min + Math.random() * (max - min);
+  const confetti = Array.from({ length: 48 }, () => {
+    const duration = randomBetween(4.5, 8.5);
+    const delay = randomBetween(-duration, 0);
+    const drift = randomBetween(-42, 42);
+    const spin = randomBetween(420, 1080) * (Math.random() < 0.5 ? -1 : 1);
+    return '<i style="left:' + randomBetween(0, 100).toFixed(2) + '%;--drift-x:' + drift.toFixed(0)
+      + 'px;--spin:' + spin.toFixed(0) + 'deg;--fall-duration:' + duration.toFixed(2)
+      + 's;--fall-delay:' + delay.toFixed(2) + 's;--piece-width:' + randomBetween(5, 10).toFixed(1)
+      + 'px;--piece-height:' + randomBetween(8, 17).toFixed(1) + 'px"></i>';
+  }).join("");
   return '<div class="winner-screen"><div class="confetti-rain" aria-hidden="true">' + confetti + '</div>'
     + '<div class="winner-content"><span class="eyebrow">IL VERDETTO È ARRIVATO</span><div class="winner-crown" aria-hidden="true">♛</div>'
     + '<p class="winner-kicker">🏆 IL FILM VINCITORE 🏆</p><h2>Il vincitore è…</h2><article class="winner-card">'
