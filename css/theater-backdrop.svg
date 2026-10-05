@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="stage" cx="50%" cy="34%" r="78%">
+      <stop offset="0" stop-color="#161729"/>
+      <stop offset=".62" stop-color="#090a16"/>
+      <stop offset="1" stop-color="#05050c"/>
+    </radialGradient>
+    <radialGradient id="spot" cx="50%" cy="4%" r="72%">
+      <stop offset="0" stop-color="#fff7dd" stop-opacity=".3"/>
+      <stop offset=".32" stop-color="#d8c6bd" stop-opacity=".13"/>
+      <stop offset="1" stop-color="#a5a3d8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="curtain" x2="1">
+      <stop stop-color="#28050b"/>
+      <stop offset=".18" stop-color="#970f1d"/>
+      <stop offset=".32" stop-color="#d52330"/>
+      <stop offset=".52" stop-color="#710913"/>
+      <stop offset=".75" stop-color="#bc1726"/>
+      <stop offset="1" stop-color="#37060b"/>
+    </linearGradient>
+    <linearGradient id="velvet" x2="0" y2="1">
+      <stop stop-color="#ec3840" stop-opacity=".3"/>
+      <stop offset=".18" stop-color="#790a14" stop-opacity="0"/>
+      <stop offset=".85" stop-color="#160308" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#050307" stop-opacity=".95"/>
+    </linearGradient>
+    <linearGradient id="floor" x2="0" y2="1">
+      <stop stop-color="#311c17"/>
+      <stop offset=".5" stop-color="#5b3824"/>
+      <stop offset="1" stop-color="#1b100e"/>
+    </linearGradient>
+    <linearGradient id="seat" x2="0" y2="1">
+      <stop stop-color="#831923"/>
+      <stop offset=".4" stop-color="#bd2630"/>
+      <stop offset=".72" stop-color="#740f1b"/>
+      <stop offset="1" stop-color="#26070c"/>
+    </linearGradient>
+    <radialGradient id="seatshine" cx="50%" cy="0" r="100%">
+      <stop stop-color="#f07c76" stop-opacity=".5"/>
+      <stop offset=".42" stop-color="#ef7775" stop-opacity=".08"/>
+      <stop offset="1" stop-color="#160306" stop-opacity=".4"/>
+    </radialGradient>
+    <pattern id="boards" width="250" height="120" patternUnits="userSpaceOnUse">
+      <path d="M0 0H250M0 118H250M125 0v28M35 28h180M35 28v42M215 28v42M0 70h250M0 70v48M250 70v48" fill="none" stroke="#100b0b" stroke-opacity=".58" stroke-width="3"/>
+      <path d="M8 8H242M43 34v31M207 34v31M8 76h234" fill="none" stroke="#d0915b" stroke-opacity=".09" stroke-width="1"/>
+    </pattern>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#stage)"/>
+  <rect width="1600" height="755" fill="url(#spot)"/>
+  <g fill="#bbb8ff" opacity=".34">
+    <circle cx="280" cy="98" r="1.7"/><circle cx="337" cy="241" r="1.4"/><circle cx="430" cy="132" r="1.2"/>
+    <circle cx="523" cy="305" r="1.8"/><circle cx="596" cy="86" r="1.3"/><circle cx="681" cy="198" r="1.5"/>
+    <circle cx="752" cy="122" r="1.1"/><circle cx="829" cy="258" r="1.7"/><circle cx="914" cy="91" r="1.3"/>
+    <circle cx="1008" cy="181" r="1.2"/><circle cx="1102" cy="111" r="1.7"/><circle cx="1194" cy="278" r="1.2"/>
+    <circle cx="1286" cy="148" r="1.5"/><circle cx="1345" cy="92" r="1.1"/><circle cx="372" cy="378" r="1.3"/>
+    <circle cx="683" cy="433" r="1.1"/><circle cx="970" cy="391" r="1.6"/><circle cx="1210" cy="440" r="1.2"/>
+  </g>
+  <ellipse cx="800" cy="697" rx="310" ry="38" fill="#f4b859" opacity=".2" filter="url(#glow)"/>
+
+  <path d="M0 0h214v735c-36 21-68 13-98 3-37 16-78 15-116-1Z" fill="url(#curtain)"/>
+  <path d="M0 0h214v735c-36 21-68 13-98 3-37 16-78 15-116-1Z" fill="url(#velvet)"/>
+  <path d="M19 0v730M55 0v737M91 0v742M131 0v741M169 0v739M198 0v735" fill="none" stroke="#f34a4c" stroke-opacity=".23" stroke-width="7"/>
+  <path d="M34 0v734M73 0v739M112 0v741M151 0v740M184 0v737" fill="none" stroke="#25040a" stroke-opacity=".45" stroke-width="11"/>
+  <path d="M1386 0h214v737c-38 16-79 17-116 1-30 10-62 18-98-3Z" fill="url(#curtain)"/>
+  <path d="M1386 0h214v737c-38 16-79 17-116 1-30 10-62 18-98-3Z" fill="url(#velvet)"/>
+  <path d="M1402 0v735M1437 0v739M1477 0v741M1517 0v740M1555 0v737M1582 0v731" fill="none" stroke="#f34a4c" stroke-opacity=".23" stroke-width="7"/>
+  <path d="M1418 0v737M1456 0v740M1497 0v741M1536 0v739M1570 0v735" fill="none" stroke="#25040a" stroke-opacity=".45" stroke-width="11"/>
+
+  <path d="M0 752h1600v104H0Z" fill="url(#floor)"/>
+  <path d="M0 752h1600v104H0Z" fill="url(#boards)" opacity=".9"/>
+  <path d="M0 753h1600" stroke="#a7613c" stroke-opacity=".42" stroke-width="3"/>
+  <path d="M0 848h1600v152H0Z" fill="#10080c"/>
+
+  <g stroke="#20070c" stroke-width="4">
+    <g fill="url(#seat)">
+      <path d="M-40 860q5-45 73-45t73 45v35H-40Z"/><path d="M120 865q5-48 76-48t76 48v36H120Z"/><path d="M286 871q5-50 80-50t80 50v37H286Z"/><path d="M461 876q5-52 83-52t83 52v38H461Z"/><path d="M641 881q5-54 86-54t86 54v39H641Z"/><path d="M828 881q5-54 86-54t86 54v39H828Z"/><path d="M1008 876q5-52 83-52t83 52v38h-166Z"/><path d="M1184 871q5-50 80-50t80 50v37h-160Z"/><path d="M1350 865q5-48 76-48t76 48v36h-152Z"/><path d="M1495 860q5-45 73-45t73 45v35h-146Z"/>
+      <path d="M-70 930q5-53 82-53t82 53v43H-70Z"/><path d="M104 936q5-57 86-57t86 57v45H104Z"/><path d="M293 942q5-60 90-60t90 60v47H293Z"/><path d="M489 948q5-63 94-63t94 63v49H489Z"/><path d="M693 953q5-65 97-65t97 65v49H693Z"/><path d="M913 953q5-65 97-65t97 65v49H913Z"/><path d="M1117 948q5-63 94-63t94 63v49h-188Z"/><path d="M1320 942q5-60 90-60t90 60v47h-180Z"/><path d="M1504 936q5-57 86-57t86 57v45h-172Z"/>
+      <path d="M-105 1008q5-66 98-66t98 66v46h-196Z"/><path d="M99 1015q5-72 105-72t105 72v46H99Z"/><path d="M319 1020q5-77 112-77t112 77v44H319Z"/><path d="M554 1024q5-81 117-81t117 81v42H554Z"/><path d="M800 1026q5-83 120-83t120 83v40H800Z"/><path d="M1046 1024q5-81 117-81t117 81v42h-234Z"/><path d="M1280 1020q5-77 112-77t112 77v44h-224Z"/><path d="M1498 1015q5-72 105-72t105 72v46h-210Z"/>
+    </g>
+    <g fill="url(#seatshine)" stroke="none" opacity=".65">
+      <ellipse cx="800" cy="891" rx="85" ry="32"/><ellipse cx="800" cy="959" rx="95" ry="39"/><ellipse cx="800" cy="1000" rx="110" ry="42"/>
+    </g>
+  </g>
+</svg>
