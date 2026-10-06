@@ -642,6 +642,10 @@ create policy members_read_authenticated on public.night_members
 drop policy if exists own_nomination_read on public.movie_nominations;
 create policy own_nomination_read on public.movie_nominations
   for select to authenticated using(user_id=auth.uid());
+-- Members of the same night can see submitted film titles in the participant list.
+drop policy if exists member_nomination_titles_read on public.movie_nominations;
+create policy member_nomination_titles_read on public.movie_nominations
+  for select to authenticated using(public.is_night_member(night_id));
 -- After a nomination is drawn, members can see who submitted that revealed film.
 drop policy if exists drawn_nomination_submitter_read on public.movie_nominations;
 create policy drawn_nomination_submitter_read on public.movie_nominations

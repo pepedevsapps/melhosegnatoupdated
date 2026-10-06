@@ -47,6 +47,8 @@ let loading = false;
 let refreshQueued = false;
 let queuedRefreshQuiet = true;
 let submitterPolicyNoticeShown = false;
+let nominationChannel = null;
+let nominationChannelNightId = null;
 let onboardingSteps = [];
 let onboardingIndex = 0;
 let onboardingBusy = false;
@@ -83,12 +85,30 @@ function readableError(error) {
   return message;
 }
 
+function syncNominationSubscription(nightId, isMember) {
+  if (nominationChannel && nominationChannelNightId === nightId && isMember) return;
+  if (nominationChannel) void supabase.removeChannel(nominationChannel);
+  nominationChannel = null;
+  nominationChannelNightId = null;
+  if (!supabase || !nightId || !isMember) return;
+
+  nominationChannelNightId = nightId;
+  nominationChannel = supabase.channel("night-nominations:" + nightId)
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "movie_nominations",
+      filter: "night_id=eq." + nightId,
+    }, () => refreshDashboard(true))
+    .subscribe();
+}
+
 function buildOnboardingSteps() {
   const isAdmin = currentProfile?.role === "admin";
   return [
     {
       title: "Benvenuto in Me l’ho segnato!",
-      copy: "Qui organizzate una serata cinema: scegliete categorie a turno, proponete film in segreto, controllate chi li ha già visti e infine votate. Questa guida ti accompagna in tutti i passaggi.",
+      copy: "Qui organizzate una serata cinema: scegliete categorie a turno, proponete film che tutti i partecipanti possono vedere, controllate chi li ha già visti e infine votate. Questa guida ti accompagna in tutti i passaggi.",
     },
     {
       title: "Orientati nell’app",
@@ -105,8 +125,8 @@ function buildOnboardingSteps() {
       copy: "La pagina Partecipanti mostra l’ordine salvato, il turno attuale, le categorie libere e il bonus di ogni posizione. Quando tocca a te, scegli una categoria non ancora presa: la scelta non si rimescola se ricarichi la pagina. Il bonus cresce linearmente da 0 fino a 0,5 punti.",
     },
     {
-      title: "Invia una nomination segreta",
-      copy: "Dopo aver scelto la categoria, vai su Partecipanti e cerca un film adatto. L’elenco suggerimenti aiuta a trovare il titolo; seleziona il risultato e invia la nomination. Gli altri non vedranno il titolo finché l’organizzatore non lo pescherà.",
+      title: "Invia una nomination",
+      copy: "Dopo aver scelto la categoria, vai su Partecipanti e cerca un film adatto. L’elenco suggerimenti aiuta a trovare il titolo; seleziona il risultato e invia la nomination. Il titolo apparirà subito accanto al tuo nome per tutti i partecipanti della serata.",
     },
     {
       title: isAdmin ? "Pesca i film dal pool" : "Attendi il sorteggio",
@@ -191,6 +211,7 @@ function setAuthMode(mode) {
 }
 
 function showAuth() {
+  syncNominationSubscription(null, false);
   currentUser = null;
   currentProfile = null;
   dashboard = null;
@@ -235,6 +256,7 @@ async function refreshDashboard(quiet = false) {
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (nightError) throw nightError;
     if (!night) {
+      syncNominationSubscription(null, false);
       dashboard = { night: null, isMember: false, members: [], draws: [], drawSubmitters: {}, categories: {},
         myNomination: null, mySeen: {}, myRatings: {}, assignment: null, categoryDraft: [],
         leaderboard: null, provisional: [], revealed: [] };
@@ -248,6 +270,7 @@ async function refreshDashboard(quiet = false) {
     if (memberError) throw memberError;
     const members = memberRows || [];
     const isMember = members.some((member) => member.user_id === currentUser.id);
+    syncNominationSubscription(night.id, isMember);
     const memberIds = members.map((member) => member.user_id);
     let profileRows = [];
     if (memberIds.length) {
@@ -284,6 +307,7 @@ async function refreshDashboard(quiet = false) {
     }
     let movieMetadata = {};
     let myNomination = null;
+    let nominationsByUser = {};
     let assignment = null;
     let categoryDraft = [];
     let leaderboard = null;
@@ -299,10 +323,11 @@ async function refreshDashboard(quiet = false) {
       const { data: assignmentRows, error: assignmentError } = await supabase.rpc("get_my_assignment", { p_night_id: night.id });
       if (assignmentError) throw assignmentError;
       assignment = assignmentRows?.[0] || null;
-      const { data: nomination, error: nominationError } = await supabase
-        .from("movie_nominations").select("id,title,status").eq("night_id", night.id).eq("user_id", currentUser.id).maybeSingle();
+      const { data: nominationRows, error: nominationError } = await supabase
+        .from("movie_nominations").select("id,user_id,title,status").eq("night_id", night.id);
       if (nominationError) throw nominationError;
-      myNomination = nomination;
+      nominationsByUser = Object.fromEntries((nominationRows || []).map((nomination) => [nomination.user_id, nomination]));
+      myNomination = nominationsByUser[currentUser.id] || null;
 
       const drawIds = draws.map((draw) => draw.id);
       if (drawIds.length) {
@@ -332,7 +357,7 @@ async function refreshDashboard(quiet = false) {
       }
     }
 
-    dashboard = { night, isMember, members, profileMap, draws, drawSubmitters, categories, movieMetadata, myNomination,
+    dashboard = { night, isMember, members, profileMap, draws, drawSubmitters, categories, movieMetadata, myNomination, nominationsByUser,
       mySeen, myRatings, assignment, categoryDraft, leaderboard, provisional, revealed };
     renderAll();
   } catch (error) {
@@ -383,18 +408,23 @@ function renderAdminPanel(night, allNominated, poolRemaining, canDraw, replaceme
     + '</div></article>';
 }
 
-function renderMemberRows(members, profileMap) {
+function renderMemberRows(members, profileMap, categoryDraft = [], nominationsByUser = {}) {
   if (!members.length) return '<p class="small-muted">Nessun partecipante trovato.</p>';
+  const draftByUser = Object.fromEntries(categoryDraft.map((row) => [row.user_id, row]));
   return '<div class="member-list">' + members.map((member) => {
     const person = profileMap?.[member.user_id] || { username: "utente", role: "player" };
     const isSelf = member.user_id === currentUser.id;
+    const category = draftByUser[member.user_id]?.category_name || "In attesa";
+    const movie = nominationsByUser[member.user_id]?.title || "In attesa";
     const state = member.has_nominated
       ? '<span class="member-state done">✓ Nomination inserita</span>'
       : '<span class="member-state">In attesa</span>';
     const role = person.role === "admin" ? '<span class="member-state admin">Admin</span>' : "";
-    return '<div class="member-row"><div class="member-name"><span class="avatar">'
+    return '<div class="member-row"><div class="member-row-main"><div class="member-name"><span class="avatar">'
       + escapeHtml(person.username.slice(0, 2)) + '</span><span>' + escapeHtml(person.username)
-      + (isSelf ? " (tu)" : "") + "</span></div><div>" + role + state + "</div></div>";
+      + (isSelf ? " (tu)" : "") + '</span></div><div class="member-pick-details"><span><small>Categoria</small><strong>'
+      + escapeHtml(category) + '</strong></span><span class="member-pick-movie"><small>Film</small><strong>'
+      + escapeHtml(movie) + '</strong></span></div></div><div class="member-row-status">' + role + state + "</div></div>";
   }).join("") + "</div>";
 }
 
@@ -616,7 +646,7 @@ function renderParticipants() {
   }
 
   const { night, members, profileMap, draws, drawSubmitters = {}, categories, movieMetadata = {}, isMember, assignment,
-    categoryDraft = [], myNomination, mySeen, myRatings, leaderboard, provisional = [] } = dashboard;
+    categoryDraft = [], nominationsByUser = {}, myNomination, mySeen, myRatings, leaderboard, provisional = [] } = dashboard;
   if (!isMember) {
     participantsView.innerHTML = renderEmpty("Non sei in questa serata", "Questa serata è stata aperta prima della tua registrazione. Potrai partecipare alla prossima.")
       + (currentProfile?.role === "admin" ? '<div class="admin-control">' + renderAdminPanel(night, false, 0, false) + "</div>" : "");
@@ -656,7 +686,7 @@ function renderParticipants() {
   const drawSection = chronologicalDraws.length
     ? '<div class="divider"></div><div class="section-heading"><div><span class="section-kicker">POOL ESTRATTO</span><h2>Film della serata</h2><p>Vengono mostrati solo dopo il sorteggio.</p></div></div><div class="film-list">'
       + chronologicalDraws.map((draw, i) => renderDrawCard(draw, i, categories, mySeen, myRatings, night.phase, myNomination?.id, movieMetadata[draw.id], drawSubmitters[draw.nomination_id], draw.id !== currentDrawId)).join("") + "</div>"
-    : '<div class="divider"></div><p class="small-muted">I titoli restano segreti fino al sorteggio. Per ora puoi vedere solo chi ha completato la nomination.</p>';
+    : '<div class="divider"></div><p class="small-muted">Nessun film estratto. Puoi vedere le nomination nella lista dei partecipanti.</p>';
   const draftSection = renderCategoryDraft(categoryDraft, categories, night.phase);
   const provisionalSection = night.phase !== "complete" && (provisional.length || approvedDraws.length)
     ? '<div class="provisional-progress"><span>Valutazioni ricevute · ' + ratingProgress.submitted + '/' + ratingProgress.expected + '</span></div>'
@@ -672,10 +702,10 @@ function renderParticipants() {
     + '<div class="content-grid"><div class="main-column"><article class="card assignment-card"><span class="assignment-icon" aria-hidden="true">✦</span><span class="eyebrow">LA TUA CATEGORIA</span><h3>'
     + escapeHtml(categoryName) + '</h3><p>' + (night.phase === "category_draft"
       ? "La categoria verrà scelta nell’ordine mostrato sopra."
-      : "Nomina un film che appartenga a questa categoria. Gli altri vedranno che hai partecipato, non il titolo.") + '</p>'
+      : "Nomina un film che appartenga a questa categoria. La nomination sarà visibile ai partecipanti.") + '</p>'
     + nominationBox + "</article>" + drawSection + provisionalSection + '</div><aside class="side-column">'
     + '<article class="card card-pad"><div class="section-heading"><div><span class="section-kicker">I TUOI COMPAGNI</span><h2>Partecipanti</h2></div><span class="status-chip">'
-    + submittedCount + "/" + memberCount + "</span></div>" + renderMemberRows(members, profileMap) + "</article>"
+    + submittedCount + "/" + memberCount + "</span></div>" + renderMemberRows(members, profileMap, categoryDraft, nominationsByUser) + "</article>"
     + '<div class="admin-control">' + renderAdminPanel(night, allNominated, poolRemaining, canDraw, hasRejected, canFinalize, ratingProgress) + "</div></aside></div>";
 }
 
@@ -1053,7 +1083,7 @@ document.addEventListener("submit", async (event) => {
     }
     toast(isReplacement
       ? "Film sostituito: la votazione riparte sul nuovo titolo."
-      : "Nomination salvata: il titolo resta segreto finché non viene estratto.", "success");
+      : "Nomination salvata: ora il titolo è visibile ai partecipanti.", "success");
     await refreshDashboard();
   } catch (error) {
     toast(readableError(error), "error");
