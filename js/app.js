@@ -131,12 +131,12 @@ function buildOnboardingSteps() {
     {
       title: isAdmin ? "Pesca i film dal pool" : "Attendi il sorteggio",
       copy: isAdmin
-        ? "Quando tutti hanno inviato una nomination, usa i controlli admin in Partecipanti per pescare un film. Le estrazioni formano la cronologia della serata. Prima della pesca successiva, completate il controllo visto/non visto e le valutazioni richieste."
+        ? "Quando tutti hanno inviato una nomination, usa i controlli admin in Partecipanti per pescare un film. Le estrazioni formano la cronologia della serata. Prima della pesca successiva, completate le valutazioni richieste."
         : "Quando tutte le nomination sono state inviate, l’organizzatore pesca i titoli uno alla volta. Ogni film estratto entra nella cronologia in Partecipanti e compare anche nella Home.",
     },
     {
-      title: "Vota se hai già visto il film",
-      copy: "Sotto il film in Home, scegli L’ho visto oppure Non l’ho visto. Il conteggio e la percentuale si aggiornano con i voti. Se più del 55% lo ha già visto, chi l’ha proposto può sostituire il titolo: non serve una nuova pesca.",
+      title: "Vota se hai già visto i film",
+      copy: "Puoi votare L’ho visto oppure Non l’ho visto accanto a ogni nomination in Partecipanti, in qualsiasi momento finché la serata è in corso. Il conteggio si aggiorna e puoi modificare la tua risposta. Se più del 55% lo ha già visto, chi l’ha proposto può sostituirlo: non serve una nuova pesca.",
     },
     {
       title: "Dai il tuo voto al film",
@@ -258,7 +258,7 @@ async function refreshDashboard(quiet = false) {
     if (!night) {
       syncNominationSubscription(null, false);
       dashboard = { night: null, isMember: false, members: [], draws: [], drawSubmitters: {}, categories: {},
-        myNomination: null, mySeen: {}, myRatings: {}, assignment: null, categoryDraft: [],
+        myNomination: null, nominationsByUser: {}, nominationsById: {}, mySeen: {}, myRatings: {}, assignment: null, categoryDraft: [],
         leaderboard: null, provisional: [], revealed: [] };
       renderAll();
       return;
@@ -308,6 +308,7 @@ async function refreshDashboard(quiet = false) {
     let movieMetadata = {};
     let myNomination = null;
     let nominationsByUser = {};
+    let nominationsById = {};
     let assignment = null;
     let categoryDraft = [];
     let leaderboard = null;
@@ -324,22 +325,24 @@ async function refreshDashboard(quiet = false) {
       if (assignmentError) throw assignmentError;
       assignment = assignmentRows?.[0] || null;
       const { data: nominationRows, error: nominationError } = await supabase
-        .from("movie_nominations").select("id,user_id,title,status").eq("night_id", night.id);
+        .rpc("get_night_nomination_list", { p_night_id: night.id });
       if (nominationError) throw nominationError;
+      nominationsById = Object.fromEntries((nominationRows || []).map((nomination) => [nomination.id, nomination]));
       nominationsByUser = Object.fromEntries((nominationRows || []).map((nomination) => [nomination.user_id, nomination]));
       myNomination = nominationsByUser[currentUser.id] || null;
 
       const drawIds = draws.map((draw) => draw.id);
       if (drawIds.length) {
-        const [{ data: seenRows, error: seenError }, { data: ratingRows, error: ratingError }, { data: metadataRows, error: metadataError }] = await Promise.all([
-          supabase.from("seen_votes").select("drawn_film_id,has_seen").eq("user_id", currentUser.id).in("drawn_film_id", drawIds),
+        const [{ data: ratingRows, error: ratingError }, { data: metadataRows, error: metadataError }] = await Promise.all([
           supabase.from("movie_ratings").select("drawn_film_id,rating").eq("user_id", currentUser.id).in("drawn_film_id", drawIds),
           supabase.from("drawn_film_metadata").select("drawn_film_id,found,imdb_id,title,year,rated,released,runtime,genre,director,actors,plot,language,country,awards,poster_url,imdb_rating,imdb_votes,metascore").in("drawn_film_id", drawIds),
         ]);
-        if (seenError) throw seenError;
         if (ratingError) throw ratingError;
         if (metadataError) throw metadataError;
-        for (const row of seenRows || []) mySeen[row.drawn_film_id] = row.has_seen;
+        for (const draw of draws) {
+          const seenVote = nominationsById[draw.nomination_id]?.my_has_seen;
+          if (seenVote !== null && seenVote !== undefined) mySeen[draw.id] = seenVote;
+        }
         for (const row of ratingRows || []) myRatings[row.drawn_film_id] = Number(row.rating);
         movieMetadata = Object.fromEntries((metadataRows || []).map((row) => [row.drawn_film_id, row]));
       }
@@ -358,6 +361,7 @@ async function refreshDashboard(quiet = false) {
     }
 
     dashboard = { night, isMember, members, profileMap, draws, drawSubmitters, categories, movieMetadata, myNomination, nominationsByUser,
+      nominationsById,
       mySeen, myRatings, assignment, categoryDraft, leaderboard, provisional, revealed };
     renderAll();
   } catch (error) {
@@ -408,14 +412,37 @@ function renderAdminPanel(night, allNominated, poolRemaining, canDraw, replaceme
     + '</div></article>';
 }
 
-function renderMemberRows(members, profileMap, categoryDraft = [], nominationsByUser = {}) {
+function renderNominationSeenVote(nomination, phase) {
+  const votesCast = Number(nomination.vote_count || 0);
+  const memberCount = Number(nomination.member_count || 0);
+  const seenCount = Number(nomination.seen_count || 0);
+  const seenPercent = votesCast ? (seenCount / votesCast) * 100 : 0;
+  const overThreshold = votesCast > 0 && seenCount * 100 > votesCast * 55;
+  const ownVote = nomination.my_has_seen;
+  const locked = phase !== "nominations";
+  const voteProgress = memberCount
+    ? votesCast + "/" + memberCount + " hanno votato · " + seenPercent.toFixed(1) + "% dei voti dice già visto"
+    : "Nessun partecipante disponibile";
+  return '<div class="nomination-seen-vote"><strong>Lo hai già visto?</strong>'
+    + '<p class="seen-summary">' + escapeHtml(locked ? "Voto chiuso" : voteProgress) + '</p>'
+    + '<div class="seen-progress' + (overThreshold ? ' over-threshold' : '') + '" role="progressbar" aria-label="Voti che dichiarano di aver visto il film" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + seenPercent.toFixed(1) + '"><span style="width:' + Math.min(100, seenPercent).toFixed(1) + '%"></span></div>'
+    + '<div class="seen-actions"><button class="button ' + (ownVote === true ? "button-danger" : "button-quiet")
+    + '" data-action="nomination-seen-vote" data-id="' + escapeHtml(nomination.id) + '" data-value="true"'
+    + (locked ? " disabled" : "") + '>L’ho visto</button><button class="button '
+    + (ownVote === false ? "button-secondary" : "button-quiet") + '" data-action="nomination-seen-vote" data-id="'
+    + escapeHtml(nomination.id) + '" data-value="false"' + (locked ? " disabled" : "")
+    + '>Non l’ho visto</button></div></div>';
+}
+
+function renderMemberRows(members, profileMap, categoryDraft = [], nominationsByUser = {}, phase = "complete") {
   if (!members.length) return '<p class="small-muted">Nessun partecipante trovato.</p>';
   const draftByUser = Object.fromEntries(categoryDraft.map((row) => [row.user_id, row]));
   return '<div class="member-list">' + members.map((member) => {
     const person = profileMap?.[member.user_id] || { username: "utente", role: "player" };
     const isSelf = member.user_id === currentUser.id;
     const category = draftByUser[member.user_id]?.category_name || "In attesa";
-    const movie = nominationsByUser[member.user_id]?.title || "In attesa";
+    const nomination = nominationsByUser[member.user_id];
+    const movie = nomination?.title || "In attesa";
     const state = member.has_nominated
       ? '<span class="member-state done">✓ Nomination inserita</span>'
       : '<span class="member-state">In attesa</span>';
@@ -424,7 +451,8 @@ function renderMemberRows(members, profileMap, categoryDraft = [], nominationsBy
       + escapeHtml(person.username.slice(0, 2)) + '</span><span>' + escapeHtml(person.username)
       + (isSelf ? " (tu)" : "") + '</span></div><div class="member-pick-details"><span><small>Categoria</small><strong>'
       + escapeHtml(category) + '</strong></span><span class="member-pick-movie"><small>Film</small><strong>'
-      + escapeHtml(movie) + '</strong></span></div></div><div class="member-row-status">' + role + state + "</div></div>";
+      + escapeHtml(movie) + '</strong></span></div>' + (nomination ? renderNominationSeenVote(nomination, phase) : "")
+      + '</div><div class="member-row-status">' + role + state + "</div></div>";
   }).join("") + "</div>";
 }
 
@@ -615,7 +643,7 @@ function renderNight() {
   const draws = dashboard.draws || [];
   const draw = draws[draws.length - 1];
   if (!draw) {
-    nightView.innerHTML = renderEmpty("Il film sarà annunciato qui", "Le nomination sono ancora segrete. Il film comparirà dopo il sorteggio.");
+    nightView.innerHTML = renderEmpty("Il film sarà annunciato qui", "Puoi consultare e votare le nomination in Partecipanti. Il film comparirà qui dopo il sorteggio.");
     return;
   }
   const category = dashboard.categories?.[draw.category_id] || "Cinema";
@@ -705,7 +733,7 @@ function renderParticipants() {
       : "Nomina un film che appartenga a questa categoria. La nomination sarà visibile ai partecipanti.") + '</p>'
     + nominationBox + "</article>" + drawSection + provisionalSection + '</div><aside class="side-column">'
     + '<article class="card card-pad"><div class="section-heading"><div><span class="section-kicker">I TUOI COMPAGNI</span><h2>Partecipanti</h2></div><span class="status-chip">'
-    + submittedCount + "/" + memberCount + "</span></div>" + renderMemberRows(members, profileMap, categoryDraft, nominationsByUser) + "</article>"
+    + submittedCount + "/" + memberCount + "</span></div>" + renderMemberRows(members, profileMap, categoryDraft, nominationsByUser, night.phase) + "</article>"
     + '<div class="admin-control">' + renderAdminPanel(night, allNominated, poolRemaining, canDraw, hasRejected, canFinalize, ratingProgress) + "</div></aside></div>";
 }
 
@@ -841,12 +869,21 @@ async function runAction(action, button) {
       const detailsError = await loadOmdbDetails(drawnFilmId);
       if (detailsError) toast("Film estratto. I dettagli OMDb non sono ancora disponibili.", "error");
       toast("Film estratto. Tutti possono votare se l’hanno già visto.", "success");
-    } else if (action === "seen-vote") {
-      const hadVoted = Object.hasOwn(dashboard?.mySeen || {}, button.dataset.id);
-      const { error } = await supabase.rpc("submit_seen_vote", {
-        p_drawn_film_id: button.dataset.id,
-        p_has_seen: button.dataset.value === "true",
-      });
+    } else if (action === "seen-vote" || action === "nomination-seen-vote") {
+      const isNominationVote = action === "nomination-seen-vote";
+      const oldVote = isNominationVote
+        ? dashboard?.nominationsById?.[button.dataset.id]?.my_has_seen
+        : dashboard?.mySeen?.[button.dataset.id];
+      const hadVoted = oldVote !== undefined && oldVote !== null;
+      const { error } = isNominationVote
+        ? await supabase.rpc("submit_nomination_seen_vote", {
+          p_nomination_id: button.dataset.id,
+          p_has_seen: button.dataset.value === "true",
+        })
+        : await supabase.rpc("submit_seen_vote", {
+          p_drawn_film_id: button.dataset.id,
+          p_has_seen: button.dataset.value === "true",
+        });
       if (error) throw error;
       toast(hadVoted
         ? "Risposta aggiornata. Puoi cambiarla finché la serata è in corso."
