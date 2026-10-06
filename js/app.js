@@ -44,6 +44,8 @@ let currentProfile = null;
 let dashboard = null;
 let activeTab = "night";
 let loading = false;
+let refreshQueued = false;
+let queuedRefreshQuiet = true;
 let submitterPolicyNoticeShown = false;
 let onboardingSteps = [];
 let onboardingIndex = 0;
@@ -220,7 +222,12 @@ async function enterApp(user) {
 }
 
 async function refreshDashboard(quiet = false) {
-  if (!currentUser || loading) return;
+  if (!currentUser) return;
+  if (loading) {
+    refreshQueued = true;
+    queuedRefreshQuiet = queuedRefreshQuiet && quiet;
+    return;
+  }
   loading = true;
   try {
     const { data: night, error: nightError } = await supabase
@@ -333,6 +340,12 @@ async function refreshDashboard(quiet = false) {
     if (!dashboard) nightView.innerHTML = '<div class="error-box">' + escapeHtml(readableError(error)) + "</div>";
   } finally {
     loading = false;
+    if (refreshQueued) {
+      const nextQuiet = queuedRefreshQuiet;
+      refreshQueued = false;
+      queuedRefreshQuiet = true;
+      window.setTimeout(() => refreshDashboard(nextQuiet), 0);
+    }
   }
 }
 

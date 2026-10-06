@@ -26,7 +26,7 @@ create table if not exists public.film_categories (
 );
 insert into public.film_categories(name) values
  ('Commedia'),('Drammatico'),('Fantascienza'),('Horror'),('Thriller'),
- ('Animazione'),('Azione'),('Fantasy'),('Cinema italiano'),('Cult'),
+ ('Animazione'),('Azione'),('Fantasy'),('Cinema italiano'),
  ('Documentario'),('Musical'),('Romantico'),('Avventura'),('Crime'),
  ('Film in bianco e nero')
 on conflict(name) do nothing;
