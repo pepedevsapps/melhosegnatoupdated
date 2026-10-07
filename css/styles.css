@@ -243,6 +243,19 @@ a { color: inherit; text-decoration: none; }
 .nomination-seen-vote .nomination-replacement-form label { font-size: 10px; }
 .nomination-seen-vote .nomination-replacement-form input { min-height: 36px; font-size: 11px; }
 .nomination-seen-vote .nomination-replacement-form .button { min-height: 36px; padding: 0 10px; font-size: 10px; }
+.vote-details-control { margin-top: 8px; }
+.vote-details-toggle, .vote-details-refresh { min-height: 30px !important; padding: 0 9px !important; font-size: 9px !important; }
+.vote-details-panel { margin-top: 8px; padding: 9px; border: 1px solid rgba(255,255,255,.07); border-radius: 9px; background: rgba(0,0,0,.13); }
+.vote-details-refresh { float: right; }
+.vote-details-loading, .vote-details-groups p, .rating-vote-details > p { margin: 7px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; overflow-wrap: anywhere; }
+.vote-details-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; clear: both; }
+.vote-details-groups section { min-width: 0; }
+.vote-details-groups section > strong, .rating-vote-details > strong { color: var(--text); font-size: 9px; }
+.vote-details-groups small, .rating-vote-details small { color: var(--faint); font-size: 8px; }
+.rating-vote-details { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.06); }
+.rating-vote-details ul { display: grid; gap: 4px; margin: 6px 0 0; padding: 0; list-style: none; }
+.rating-vote-details li { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 9px; }
+.rating-vote-details li strong { color: var(--amber); }
 .avatar { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; border: 1px solid rgba(247, 189, 104, .18); border-radius: 9px; color: var(--amber); background: rgba(247, 189, 104, .08); font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .member-state { display: inline-flex; align-items: center; gap: 5px; color: var(--faint); font-size: 10px; white-space: nowrap; }
 .member-state.done { color: var(--mint); }
@@ -433,6 +446,7 @@ a { color: inherit; text-decoration: none; }
   .home-movie-card { grid-template-columns: minmax(170px, 240px) minmax(0, 1fr); gap: 24px; }
 }
 @media (max-width: 560px) {
+  .vote-details-groups { grid-template-columns: 1fr; gap: 6px; }
   .topbar { min-height: calc(62px + env(safe-area-inset-top, 0px)); padding: env(safe-area-inset-top, 0px) max(12px, 4vw) 0; gap: 8px; }
   .topbar .brand { gap: 0; font-size: clamp(20px, 6vw, 24px); white-space: nowrap; }
   .topbar-actions { min-width: 0; flex-shrink: 0; gap: 7px; }

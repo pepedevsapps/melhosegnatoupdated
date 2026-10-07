@@ -52,6 +52,9 @@ let nominationChannelNightId = null;
 let onboardingSteps = [];
 let onboardingIndex = 0;
 let onboardingBusy = false;
+const voteDetailsByNomination = new Map();
+const openVoteDetails = new Set();
+const voteDetailsLoading = new Set();
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -212,6 +215,9 @@ function setAuthMode(mode) {
 
 function showAuth() {
   syncNominationSubscription(null, false);
+  voteDetailsByNomination.clear();
+  openVoteDetails.clear();
+  voteDetailsLoading.clear();
   currentUser = null;
   currentProfile = null;
   dashboard = null;
@@ -446,7 +452,38 @@ function renderNominationSeenVote(nomination, phase) {
     + (locked ? " disabled" : "") + '>L’ho visto</button><button class="button '
     + (ownVote === false ? "button-secondary" : "button-quiet") + '" data-action="nomination-seen-vote" data-id="'
     + escapeHtml(nomination.id) + '" data-value="false"' + (locked ? " disabled" : "")
-    + '>Non l’ho visto</button></div>' + replacementHtml + '</div>';
+    + '>Non l’ho visto</button></div>' + replacementHtml + renderVoteDetails(nomination.id) + '</div>';
+}
+
+function renderVoteDetails(nominationId) {
+  const isOpen = openVoteDetails.has(nominationId);
+  const rows = voteDetailsByNomination.get(nominationId) || [];
+  const loadingDetails = voteDetailsLoading.has(nominationId);
+  let content = "";
+  if (isOpen) {
+    if (loadingDetails) {
+      content = '<p class="vote-details-loading">Caricamento voti…</p>';
+    } else if (!rows.length) {
+      content = '<p class="vote-details-loading">Nessun partecipante disponibile.</p>';
+    } else {
+      const seen = rows.filter((row) => row.has_seen === true).map((row) => row.username);
+      const notSeen = rows.filter((row) => row.has_seen === false).map((row) => row.username);
+      const waitingSeen = rows.filter((row) => row.has_seen === null).map((row) => row.username);
+      const ratings = rows.filter((row) => row.rating !== null && row.rating !== undefined);
+      const names = (list) => list.length ? list.map(escapeHtml).join(", ") : "Nessuno";
+      content = '<div class="vote-details-groups"><section><strong>L’ho visto <small>(' + seen.length + ')</small></strong><p>' + names(seen)
+        + '</p></section><section><strong>Non l’ho visto <small>(' + notSeen.length + ')</small></strong><p>' + names(notSeen)
+        + '</p></section><section><strong>In attesa <small>(' + waitingSeen.length + ')</small></strong><p>' + names(waitingSeen)
+        + '</p></section></div><div class="rating-vote-details"><strong>Valutazioni <small>(' + ratings.length + ')</small></strong>'
+        + (ratings.length ? '<ul>' + ratings.map((row) => '<li><span>' + escapeHtml(row.username) + '</span><strong>'
+          + Number(row.rating).toFixed(1) + ' / 5</strong></li>').join("") + '</ul>' : '<p>Nessuna valutazione ancora.</p>') + '</div>';
+    }
+  }
+  return '<div class="vote-details-control"><button class="button button-quiet vote-details-toggle" type="button" data-action="'
+    + (isOpen ? "hide-vote-details" : "show-vote-details") + '" data-id="' + escapeHtml(nominationId) + '"'
+    + (loadingDetails ? " disabled" : "") + '>' + (isOpen ? "Nascondi i voti" : "Vedi i voti") + '</button>'
+    + (isOpen ? '<div class="vote-details-panel" aria-live="polite"><button class="button button-quiet vote-details-refresh" type="button" data-action="refresh-vote-details" data-id="'
+      + escapeHtml(nominationId) + '"' + (loadingDetails ? " disabled" : "") + '>Aggiorna</button>' + content + '</div>' : "") + '</div>';
 }
 
 function renderMemberRows(members, profileMap, categoryDraft = [], nominationsByUser = {}, phase = "complete") {
@@ -536,9 +573,9 @@ function renderSeenVote(draw, mySeen = {}, allowRevision = false) {
       + '<div class="seen-actions"><button class="button ' + (ownVote === true ? "button-danger" : "button-quiet")
       + '" data-action="seen-vote" data-id="' + draw.id + '" data-value="true">L’ho visto</button><button class="button '
       + (ownVote === false ? "button-secondary" : "button-quiet") + '" data-action="seen-vote" data-id="' + draw.id
-      + '" data-value="false">Non l’ho visto</button></div></div>';
+      + '" data-value="false">Non l’ho visto</button></div>' + renderVoteDetails(draw.nomination_id) + '</div>';
   }
-  return resultHtml;
+  return resultHtml + renderVoteDetails(draw.nomination_id);
 }
 
 function renderDrawCard(draw, index, categories, mySeen, myRatings, phase, metadata, submittedBy, showSeenStatus = true) {
@@ -862,7 +899,22 @@ async function runAction(action, button) {
   if (button?.disabled) return;
   if (button) button.disabled = true;
   try {
-    if (action === "start-night") {
+    if (action === "show-vote-details" || action === "refresh-vote-details") {
+      const nominationId = button.dataset.id;
+      openVoteDetails.add(nominationId);
+      voteDetailsLoading.add(nominationId);
+      renderAll();
+      const { data, error } = await supabase.rpc("get_nomination_vote_details", { p_nomination_id: nominationId });
+      if (error) throw error;
+      voteDetailsByNomination.set(nominationId, data || []);
+      voteDetailsLoading.delete(nominationId);
+      renderAll();
+      return;
+    } else if (action === "hide-vote-details") {
+      openVoteDetails.delete(button.dataset.id);
+      renderAll();
+      return;
+    } else if (action === "start-night") {
       const { error } = await supabase.rpc("start_movie_night");
       if (error) throw error;
       toast("Draft avviato: l’ordine casuale è stato salvato.", "success");
@@ -895,6 +947,11 @@ async function runAction(action, button) {
           p_has_seen: button.dataset.value === "true",
         });
       if (error) throw error;
+      if (isNominationVote) voteDetailsByNomination.delete(button.dataset.id);
+      else {
+        const draw = dashboard?.draws?.find((item) => item.id === button.dataset.id);
+        if (draw?.nomination_id) voteDetailsByNomination.delete(draw.nomination_id);
+      }
       toast(hadVoted
         ? "Risposta aggiornata. Puoi cambiarla finché la serata è in corso."
         : "Risposta registrata. Puoi cambiarla finché la serata è in corso.", "success");
@@ -904,6 +961,8 @@ async function runAction(action, button) {
         p_rating: Number(button.dataset.value),
       });
       if (error) throw error;
+      const draw = dashboard?.draws?.find((item) => item.id === button.dataset.id);
+      if (draw?.nomination_id) voteDetailsByNomination.delete(draw.nomination_id);
       toast("Il tuo voto è stato registrato.", "success");
     } else if (action === "finalize-night") {
       const { error } = await supabase.rpc("finalize_movie_night", { p_night_id: dashboard.night.id });
@@ -913,6 +972,11 @@ async function runAction(action, button) {
     }
     await refreshDashboard();
   } catch (error) {
+    if (action === "show-vote-details" || action === "refresh-vote-details") {
+      voteDetailsLoading.delete(button.dataset.id);
+      openVoteDetails.delete(button.dataset.id);
+      renderAll();
+    }
     toast(readableError(error), "error");
     await refreshDashboard(true);
   } finally {
@@ -1130,6 +1194,7 @@ document.addEventListener("submit", async (event) => {
         });
     if (error) throw error;
     submitted = true;
+    if (isReplacement && nominationId) voteDetailsByNomination.delete(nominationId);
     button.textContent = "Salvata ✓";
     if (replacementDraw) {
       const detailsError = await loadOmdbDetails(replacementDraw.id);
