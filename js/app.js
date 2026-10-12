@@ -201,9 +201,13 @@ async function completeOnboardingTour() {
 function setAuthMode(mode) {
   authMode = mode;
   const signup = mode === "signup";
+  const passwordInput = document.querySelector("#password-input");
   usernameField.hidden = !signup;
   document.querySelector("#username-input").required = signup;
-  document.querySelector("#password-input").autocomplete = signup ? "new-password" : "current-password";
+  passwordInput.autocomplete = signup ? "new-password" : "current-password";
+  // The minimum length applies to new passwords, not existing accounts. Older
+  // accounts may have shorter passwords and must still be able to sign in.
+  passwordInput.minLength = signup ? 8 : 1;
   authEyebrow.textContent = signup ? "ENTRA NEL CLUB" : "BENVENUTO NEL CLUB";
   authTitle.textContent = signup ? "Crea il tuo account" : "Accedi alla serata";
   authSubtitle.textContent = signup
