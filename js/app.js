@@ -742,36 +742,55 @@ function renderVotes() {
     return;
   }
   const nominations = Object.values(dashboard.nominationsById || {});
-  if (!nominations.length) {
+  const draws = dashboard.draws || [];
+  if (!nominations.length && !draws.length) {
     votesView.innerHTML = renderEmpty("Nessun film da votare", "Le nomination appariranno qui man mano che vengono inviate.");
     return;
   }
   const categoryByUser = Object.fromEntries((dashboard.categoryDraft || []).map((row) => [row.user_id, row.category_name]));
-  const drawsByNomination = Object.fromEntries((dashboard.draws || []).map((draw) => [draw.nomination_id, draw]));
-  const approvedDraws = (dashboard.draws || []).filter((draw) => draw.status === "approved");
+  const nominationsById = dashboard.nominationsById || {};
+  const drawnNominationIds = new Set(draws.map((draw) => draw.nomination_id));
+  const approvedDraws = draws.filter((draw) => draw.status === "approved");
   const ratingSubmitted = approvedDraws.reduce((total, draw) => total + Number(draw.rating_count || 0), 0);
   const ratingExpected = approvedDraws.reduce((total, draw) => total + Number(draw.member_count || 0), 0);
-  const cards = nominations.map((nomination) => {
+  const renderVoteCard = (nomination, draw = null) => {
     const submitter = dashboard.profileMap?.[nomination.user_id]?.username || "Partecipante";
     const category = categoryByUser[nomination.user_id] || "Cinema";
-    const draw = drawsByNomination[nomination.id];
+    const title = draw?.title || nomination.title;
     const status = !draw ? "In attesa di estrazione"
       : draw.status === "checking" ? "Verifica in corso"
         : draw.status === "rejected" ? "Da sostituire"
           : dashboard.night.phase === "complete" ? "Voti chiusi"
             : dashboard.night.phase === "nominations" ? "Approvato · valutazioni aperte" : "Votazioni in chiusura";
     return '<article class="card vote-movie-card"><div class="vote-movie-heading"><div><span class="section-kicker">'
-      + escapeHtml(category) + '</span><h3>' + escapeHtml(nomination.title) + '</h3><p>Proposto da <strong>'
+      + escapeHtml(category) + '</span><h3>' + escapeHtml(title) + '</h3><p>Proposto da <strong>'
       + escapeHtml(submitter) + '</strong></p></div><span class="status-chip">' + escapeHtml(status) + '</span></div>'
       + (draw ? renderMovieMetadata(dashboard.movieMetadata?.[draw.id]) : '<p class="small-muted vote-awaiting-draw">La votazione “già visto” è disponibile anche prima dell’estrazione.</p>')
       + renderNominationSeenVote(nomination, dashboard.night.phase)
       + (draw ? renderMovieRatingVote(draw, dashboard.myRatings || {}, dashboard.night.phase) : "")
       + '</article>';
-  }).join("");
-  votesView.innerHTML = '<div class="section-heading"><div><span class="section-kicker">IL TUO VERDETTO</span><h2>Voti</h2><p>Indica se hai già visto ogni film. Dopo l’approvazione puoi assegnare un voto da 1 a 5 popcorn.</p></div>'
-    + '<span class="status-chip">' + nominations.length + ' film</span></div>'
+  };
+  const drawnCards = [...draws]
+    .sort((a, b) => (Date.parse(a.drawn_at) || 0) - (Date.parse(b.drawn_at) || 0))
+    .map((draw) => {
+      const nomination = nominationsById[draw.nomination_id] || {
+        id: draw.nomination_id,
+        user_id: null,
+        title: draw.title,
+        vote_count: Number(draw.vote_count || 0),
+        seen_count: Number(draw.seen_count || 0),
+        member_count: Number(draw.member_count || 0),
+        my_has_seen: null,
+      };
+      return renderVoteCard(nomination, draw);
+    }).join("");
+  const pendingCards = nominations.filter((nomination) => !drawnNominationIds.has(nomination.id))
+    .map((nomination) => renderVoteCard(nomination)).join("");
+  votesView.innerHTML = '<div class="section-heading"><div><span class="section-kicker">IL TUO VERDETTO</span><h2>Voti</h2><p>Qui puoi esprimere o modificare il tuo voto per ogni film estratto. Puoi anche votare se hai già visto le nomination in attesa.</p></div>'
+    + '<span class="status-chip">' + (draws.length + nominations.filter((nomination) => !drawnNominationIds.has(nomination.id)).length) + ' film</span></div>'
     + (approvedDraws.length ? '<div class="votes-progress"><span>Valutazioni ricevute</span><strong>' + ratingSubmitted + '/' + ratingExpected + '</strong></div>' : "")
-    + '<div class="vote-movie-list">' + cards + '</div>';
+    + (drawnCards ? '<div class="section-heading vote-list-heading"><div><span class="section-kicker">POOL ESTRATTO</span><h3>Valuta i film</h3><p>La tua valutazione è sempre visibile qui; puoi cambiarla finché le votazioni sono aperte.</p></div></div><div class="vote-movie-list">' + drawnCards + '</div>' : "")
+    + (pendingCards ? '<div class="section-heading vote-list-heading"><div><span class="section-kicker">NOMINATION</span><h3>Film in attesa di estrazione</h3></div></div><div class="vote-movie-list">' + pendingCards + '</div>' : "");
 }
 
 function moviePosterMarkup(posterUrl, title, className = "rank-poster") {
