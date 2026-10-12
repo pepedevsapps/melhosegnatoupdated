@@ -244,6 +244,16 @@ a { color: inherit; text-decoration: none; }
 .nomination-seen-vote .nomination-replacement-form input { min-height: 36px; font-size: 11px; }
 .nomination-seen-vote .nomination-replacement-form .button { min-height: 36px; padding: 0 10px; font-size: 10px; }
 .vote-details-control { margin-top: 8px; }
+.vote-movie-list { display: grid; gap: 13px; }
+.vote-movie-card { padding: clamp(14px, 2.5vw, 22px); }
+.vote-movie-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.vote-movie-heading h3 { margin: 6px 0 4px; font-size: clamp(18px, 3vw, 24px); overflow-wrap: anywhere; }
+.vote-movie-heading p { margin: 0; color: var(--muted); font-size: 11px; }
+.vote-movie-heading p strong { color: var(--text); }
+.vote-movie-heading .status-chip { flex: 0 0 auto; max-width: 48%; white-space: normal; text-align: center; }
+.vote-awaiting-draw { margin: 14px 0 0; }
+.votes-progress { display: flex; justify-content: space-between; align-items: center; margin: 0 0 13px; padding: 11px 14px; border: 1px solid rgba(255,208,120,.14); border-radius: 10px; color: var(--muted); background: rgba(255,255,255,.025); font-size: 11px; }
+.votes-progress strong { color: var(--amber); font-size: 13px; }
 .vote-details-toggle, .vote-details-refresh { min-height: 30px !important; padding: 0 9px !important; font-size: 9px !important; }
 .vote-details-panel { margin-top: 8px; padding: 9px; border: 1px solid rgba(255,255,255,.07); border-radius: 9px; background: rgba(0,0,0,.13); }
 .vote-details-locked { margin: 8px 0 0; color: var(--faint); font-size: 9px; line-height: 1.5; }
@@ -295,7 +305,6 @@ a { color: inherit; text-decoration: none; }
 .draft-category-option:hover { border-color: var(--amber); color: #ffe1b5; background: rgba(247,189,104,.13); }
 .draft-home-message { position: relative; z-index: 1; margin-top: 10px !important; }
 .score-section { margin: 16px 0 22px; }
-.provisional-progress { margin: 17px 0 0; color: var(--amber); font-size: 10px; font-weight: 700; }
 .score-list { display: grid; gap: 9px; }
 .score-card { display: flex; align-items: center; gap: 13px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.023); }
 .score-poster, .score-poster.poster-placeholder { display: grid; place-items: center; flex: 0 0 52px; width: 52px; height: 78px; border-radius: 6px; background: rgba(255,255,255,.06); object-fit: cover; }
@@ -484,6 +493,8 @@ a { color: inherit; text-decoration: none; }
   .card-pad { padding: 16px; }
   .member-row { flex-direction: column; gap: 7px; }
   .member-row-status { padding-left: 37px; }
+  .vote-movie-heading { flex-direction: column; }
+  .vote-movie-heading .status-chip { max-width: 100%; }
   .assignment-card { padding: 19px; }
   .nomination-form { grid-template-columns: 1fr; }
   .nomination-form .button { width: 100%; }
