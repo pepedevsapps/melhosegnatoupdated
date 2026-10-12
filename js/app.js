@@ -672,7 +672,7 @@ function renderParticipants() {
   }
 
   const { night, members, profileMap, draws, drawSubmitters = {}, categories, movieMetadata = {}, isMember, assignment,
-    categoryDraft = [], nominationsByUser = {}, myNomination, leaderboard } = dashboard;
+    categoryDraft = [], nominationsByUser = {}, nominationsById = {}, myNomination, leaderboard } = dashboard;
   if (!isMember) {
     participantsView.innerHTML = renderEmpty("Non sei in questa serata", "Questa serata è stata aperta prima della tua registrazione. Potrai partecipare alla prossima.")
       + (currentProfile?.role === "admin" ? '<div class="admin-control">' + renderAdminPanel(night, false, 0, false) + "</div>" : "");
