@@ -341,7 +341,7 @@ async function refreshDashboard(quiet = false) {
       if (drawIds.length) {
         const [{ data: ratingRows, error: ratingError }, { data: metadataRows, error: metadataError }] = await Promise.all([
           supabase.from("movie_ratings").select("drawn_film_id,rating").eq("user_id", currentUser.id).in("drawn_film_id", drawIds),
-          supabase.from("drawn_film_metadata").select("drawn_film_id,found,imdb_id,title,year,rated,released,runtime,genre,director,actors,plot,language,country,awards,poster_url,imdb_rating,imdb_votes,metascore").in("drawn_film_id", drawIds),
+          supabase.from("drawn_film_metadata").select("drawn_film_id,found,imdb_id,title,year,rated,released,runtime,genre,director,actors,plot,language,country,awards,poster_url").in("drawn_film_id", drawIds),
         ]);
         if (ratingError) throw ratingError;
         if (metadataError) throw metadataError;
@@ -456,6 +456,9 @@ function renderNominationSeenVote(nomination, phase) {
 }
 
 function renderVoteDetails(nominationId) {
+  if (dashboard?.night?.phase !== "complete") {
+    return '<p class="vote-details-locked">I voti individuali saranno visibili dopo la pubblicazione della classifica.</p>';
+  }
   const isOpen = openVoteDetails.has(nominationId);
   const rows = voteDetailsByNomination.get(nominationId) || [];
   const loadingDetails = voteDetailsLoading.has(nominationId);
@@ -534,13 +537,12 @@ function renderMovieMetadata(metadata) {
   const poster = metadata.poster_url && /^https:\/\//i.test(metadata.poster_url)
     ? '<img class="movie-poster" src="' + escapeHtml(metadata.poster_url) + '" alt="Locandina di ' + escapeHtml(metadata.title) + '" loading="lazy">'
     : '<div class="movie-poster-placeholder" aria-hidden="true">🎞</div>';
-  const score = metadata.imdb_rating ? '<span class="movie-rating">★ ' + escapeHtml(metadata.imdb_rating) + '<small> / 10 IMDb' + (metadata.imdb_votes ? ' · ' + escapeHtml(metadata.imdb_votes) + ' voti' : '') + '</small></span>' : "";
   return '<div class="movie-details">' + poster + '<div class="movie-details-copy">'
-    + '<div class="movie-details-top">' + (facts ? '<span class="movie-facts">' + facts + '</span>' : "") + score + '</div>'
+    + '<div class="movie-details-top">' + (facts ? '<span class="movie-facts">' + facts + '</span>' : "") + '</div>'
     + (metadata.plot ? '<p class="movie-plot">' + escapeHtml(metadata.plot) + '</p>' : "")
     + (credits ? '<p class="movie-credits">' + escapeHtml(credits) + '</p>' : "")
     + (metadata.awards ? '<p class="movie-credits">' + escapeHtml(metadata.awards) + '</p>' : "")
-    + '<p class="movie-attribution">Dati film: OMDb · valutazione IMDb</p>'
+    + '<p class="movie-attribution">Dati film: OMDb</p>'
     + '</div></div>';
 }
 

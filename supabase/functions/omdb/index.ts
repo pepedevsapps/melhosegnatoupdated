@@ -112,9 +112,6 @@ Deno.serve(async (request) => {
         country: found ? details.Country ?? null : null,
         awards: found ? details.Awards ?? null : null,
         poster_url: found && details.Poster !== "N/A" ? details.Poster ?? null : null,
-        imdb_rating: found && details.imdbRating !== "N/A" ? details.imdbRating ?? null : null,
-        imdb_votes: found && details.imdbVotes !== "N/A" ? details.imdbVotes ?? null : null,
-        metascore: found && details.Metascore !== "N/A" ? details.Metascore ?? null : null,
         updated_at: new Date().toISOString(),
       };
       const { error: saveError } = await db.from("drawn_film_metadata").upsert(metadata);

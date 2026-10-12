@@ -685,7 +685,10 @@ revoke all on public.admin_bootstrap from anon,authenticated;
 revoke all on public.omdb_cache,public.omdb_api_call_log from public,anon,authenticated;
 grant all on public.omdb_cache,public.omdb_api_call_log to service_role;
 revoke all on public.drawn_film_metadata from public,anon,authenticated;
-grant select on public.drawn_film_metadata to authenticated;
+grant select (
+  drawn_film_id,found,imdb_id,title,year,rated,released,runtime,genre,director,
+  actors,plot,language,country,awards,poster_url
+) on public.drawn_film_metadata to authenticated;
 revoke insert,update,delete on public.profiles,public.film_categories,public.movie_nights,
   public.night_participants,public.night_members,public.movie_nominations,
   public.drawn_films,public.seen_votes,public.nomination_seen_votes,public.movie_ratings from anon,authenticated;
@@ -1741,14 +1744,20 @@ language plpgsql stable security definer set search_path=''
 as $$
 declare
   v_night_id uuid;
+  v_phase text;
 begin
   if auth.uid() is null then
     raise exception 'Accedi per visualizzare i voti.';
   end if;
-  select n.night_id into v_night_id
-  from public.movie_nominations n where n.id=p_nomination_id;
+  select n.night_id,mn.phase into v_night_id,v_phase
+  from public.movie_nominations n
+  join public.movie_nights mn on mn.id=n.night_id
+  where n.id=p_nomination_id;
   if v_night_id is null or not public.is_night_member(v_night_id) then
     raise exception 'Film o serata non disponibili.';
+  end if;
+  if v_phase is distinct from 'complete' then
+    raise exception 'I voti individuali saranno visibili dopo la pubblicazione della classifica.';
   end if;
 
   return query
