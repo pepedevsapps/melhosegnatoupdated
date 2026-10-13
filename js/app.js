@@ -402,7 +402,7 @@ function renderAdminPanel(night, allNominated, poolRemaining, canDraw, replaceme
   if (!allNominated) explanation = "Aspetta che tutti i partecipanti inviino la propria nomination.";
   else if (replacementPending) explanation = "Una nomination ha superato la soglia del 55%. Attendi che chi l’ha proposta la sostituisca dalla sezione Voti.";
   else if (poolRemaining === 0) explanation = "Pool estratto. Puoi pubblicare la classifica quando vuoi.";
-  else if (!canDraw) explanation = "Completa la verifica e le valutazioni nella sezione Voti prima della prossima estrazione.";
+  else if (!canDraw) explanation = "Completa le nomination e le eventuali sostituzioni dalla sezione Voti.";
   else explanation = poolRemaining + (poolRemaining === 1 ? " film nel pool, pronto per il sorteggio." : " film nel pool, pronti per il sorteggio.");
   const buttonText = dashboard?.draws.length ? "Pesca il prossimo film" : "Sorteggia un film";
   return '<article class="card admin-card"><div class="admin-row"><div><h3>Controlli admin</h3><p>' + escapeHtml(explanation)
@@ -419,10 +419,11 @@ function renderNominationSeenVote(nomination, phase) {
   const seenCount = Number(nomination.seen_count || 0);
   const seenPercent = memberCount ? (seenCount / memberCount) * 100 : 0;
   const overThreshold = memberCount > 0 && seenCount * 100 > memberCount * 55;
-  const ownVote = nomination.my_has_seen;
+  const isOwner = nomination.user_id === currentUser.id;
+  const ownVote = isOwner ? null : nomination.my_has_seen;
   const locked = phase !== "nominations";
   const voteProgress = memberCount
-    ? votesCast + "/" + memberCount + " hanno votato · " + seenPercent.toFixed(1) + "% dei partecipanti dice già visto"
+    ? votesCast + "/" + memberCount + " hanno votato · " + seenPercent.toFixed(1) + "% dei votanti dice già visto"
     : "Nessun partecipante disponibile";
   let replacementHtml = "";
   if (overThreshold) {
@@ -439,15 +440,15 @@ function renderNominationSeenVote(nomination, phase) {
       replacementHtml = '<p class="replacement-ready">Soglia superata: chi ha inviato la nomination può sostituirla subito.</p>';
     }
   }
-  return '<div class="nomination-seen-vote"><strong>Lo hai già visto?</strong>'
-    + '<p class="seen-summary">' + escapeHtml(locked ? "Voto chiuso" : voteProgress) + '</p>'
+  return '<div class="nomination-seen-vote"><strong>' + (isOwner ? "La tua nomination" : "Lo hai già visto?") + '</strong>'
+    + '<p class="seen-summary">' + escapeHtml(isOwner ? "Non puoi votare la nomination che hai inviato." : locked ? "Voto chiuso" : voteProgress) + '</p>'
     + '<div class="seen-progress' + (overThreshold ? ' over-threshold' : '') + '" role="progressbar" aria-label="Voti che dichiarano di aver visto il film" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + seenPercent.toFixed(1) + '"><span style="width:' + Math.min(100, seenPercent).toFixed(1) + '%"></span></div>'
-    + '<div class="seen-actions"><button class="button ' + (ownVote === true ? "button-danger" : "button-quiet")
+    + (!isOwner ? '<div class="seen-actions"><button class="button ' + (ownVote === true ? "button-danger" : "button-quiet")
     + '" data-action="nomination-seen-vote" data-id="' + escapeHtml(nomination.id) + '" data-value="true"'
     + (locked ? " disabled" : "") + '>L’ho visto</button><button class="button '
     + (ownVote === false ? "button-secondary" : "button-quiet") + '" data-action="nomination-seen-vote" data-id="'
     + escapeHtml(nomination.id) + '" data-value="false"' + (locked ? " disabled" : "")
-    + '>Non l’ho visto</button></div>' + replacementHtml + renderVoteDetails(nomination.id) + '</div>';
+    + '>Non l’ho visto</button></div>' : "") + replacementHtml + renderVoteDetails(nomination.id) + '</div>';
 }
 
 function renderVoteDetails(nominationId) {
@@ -541,14 +542,17 @@ function renderMovieMetadata(metadata) {
     + '</div></div>';
 }
 
-function renderMovieRatingVote(draw, myRatings, phase) {
-  if (draw.status !== "approved") return "";
+function renderMovieRatingVote(draw, myRatings, phase, isOwner) {
+  if (draw.status === "rejected") return "";
+  if (isOwner) {
+    return '<div class="vote-prompt"><strong>La tua nomination</strong><p>Non puoi assegnare un voto al film che hai proposto.</p></div>';
+  }
   const rating = myRatings[draw.id];
   const canEdit = phase === "nominations";
   const options = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
   return '<div class="vote-prompt"><strong>'
     + (rating === undefined ? "Quanto ti è piaciuto?" : "Il tuo voto: " + ratingLabel(rating) + " popcorn")
-    + "</strong><p>" + Number(draw.rating_count || 0) + "/" + Number(draw.member_count || 0) + " valutazioni ricevute"
+    + "</strong><p>" + Number(draw.rating_count || 0) + "/" + Math.max(0, Number(draw.member_count || 0) - 1) + " valutazioni ricevute"
     + (canEdit && rating !== undefined ? " · puoi modificare il tuo voto" : canEdit ? "" : " · votazioni chiuse") + "</p>"
     + (canEdit ? '<div class="rating-options">' + options.map((value) =>
       '<button class="rating-option ' + (rating === value ? "selected" : "") + '" data-action="rate-film" data-id="'
@@ -692,11 +696,10 @@ function renderParticipants() {
     return aTime - bTime || String(a.id).localeCompare(String(b.id));
   });
   const hasChecking = draws.some((draw) => draw.status === "checking");
-  const waitingRatings = draws.some((draw) => draw.status === "approved" && draw.rating_count < draw.member_count);
   const replacementPending = draws.some((draw) => draw.status === "rejected")
     || Object.values(nominationsById).some((nomination) => Number(nomination.member_count) > 0
       && Number(nomination.seen_count || 0) * 100 > Number(nomination.member_count) * 55);
-  const canDraw = night.phase === "nominations" && allNominated && poolRemaining > 0 && !hasChecking && !replacementPending && !waitingRatings;
+  const canDraw = night.phase === "nominations" && allNominated && poolRemaining > 0 && !replacementPending;
   const canFinalize = (night.phase === "nominations" || night.phase === "leaderboard")
     && allNominated && poolRemaining === 0 && !hasChecking && !replacementPending;
   const phaseLabel = night.phase === "category_draft" ? "Draft categorie"
@@ -754,9 +757,9 @@ function renderVotes() {
   const categoryByUser = Object.fromEntries((dashboard.categoryDraft || []).map((row) => [row.user_id, row.category_name]));
   const nominationsById = dashboard.nominationsById || {};
   const drawnNominationIds = new Set(draws.map((draw) => draw.nomination_id));
-  const approvedDraws = draws.filter((draw) => draw.status === "approved");
-  const ratingSubmitted = approvedDraws.reduce((total, draw) => total + Number(draw.rating_count || 0), 0);
-  const ratingExpected = approvedDraws.reduce((total, draw) => total + Number(draw.member_count || 0), 0);
+  const rateableDraws = draws.filter((draw) => draw.status === "checking" || draw.status === "approved");
+  const ratingSubmitted = rateableDraws.reduce((total, draw) => total + Number(draw.rating_count || 0), 0);
+  const ratingExpected = rateableDraws.reduce((total, draw) => total + Math.max(0, Number(draw.member_count || 0) - 1), 0);
   const renderVoteCard = (nomination, draw = null) => {
     const submitter = dashboard.profileMap?.[nomination.user_id]?.username || "Partecipante";
     const category = categoryByUser[nomination.user_id] || "Cinema";
@@ -771,7 +774,7 @@ function renderVotes() {
       + escapeHtml(submitter) + '</strong></p></div><span class="status-chip">' + escapeHtml(status) + '</span></div>'
       + (draw ? renderMovieMetadata(dashboard.movieMetadata?.[draw.id]) : '<p class="small-muted vote-awaiting-draw">La votazione “già visto” è disponibile anche prima dell’estrazione.</p>')
       + renderNominationSeenVote(nomination, dashboard.night.phase)
-      + (draw ? renderMovieRatingVote(draw, dashboard.myRatings || {}, dashboard.night.phase) : "")
+      + (draw ? renderMovieRatingVote(draw, dashboard.myRatings || {}, dashboard.night.phase, nomination.user_id === currentUser.id) : "")
       + '</article>';
   };
   const drawnCards = [...draws]
@@ -783,7 +786,7 @@ function renderVotes() {
         title: draw.title,
         vote_count: Number(draw.vote_count || 0),
         seen_count: Number(draw.seen_count || 0),
-        member_count: Number(draw.member_count || 0),
+        member_count: Math.max(0, Number(draw.member_count || 0) - 1),
         my_has_seen: null,
       };
       return renderVoteCard(nomination, draw);
@@ -792,7 +795,7 @@ function renderVotes() {
     .map((nomination) => renderVoteCard(nomination)).join("");
   votesView.innerHTML = '<div class="section-heading"><div><span class="section-kicker">IL TUO VERDETTO</span><h2>Voti</h2><p>Qui puoi esprimere o modificare il tuo voto per ogni film estratto. Puoi anche votare se hai già visto le nomination in attesa.</p></div>'
     + '<span class="status-chip">' + (draws.length + nominations.filter((nomination) => !drawnNominationIds.has(nomination.id)).length) + ' film</span></div>'
-    + (approvedDraws.length ? '<div class="votes-progress"><span>Valutazioni ricevute</span><strong>' + ratingSubmitted + '/' + ratingExpected + '</strong></div>' : "")
+    + (rateableDraws.length ? '<div class="votes-progress"><span>Valutazioni ricevute</span><strong>' + ratingSubmitted + '/' + ratingExpected + '</strong></div>' : "")
     + (drawnCards ? '<div class="section-heading vote-list-heading"><div><span class="section-kicker">POOL ESTRATTO</span><h3>Valuta i film</h3><p>La tua valutazione è sempre visibile qui; puoi cambiarla finché le votazioni sono aperte.</p></div></div><div class="vote-movie-list">' + drawnCards + '</div>' : "")
     + (pendingCards ? '<div class="section-heading vote-list-heading"><div><span class="section-kicker">NOMINATION</span><h3>Film in attesa di estrazione</h3></div></div><div class="vote-movie-list">' + pendingCards + '</div>' : "");
 }
